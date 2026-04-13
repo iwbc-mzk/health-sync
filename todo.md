@@ -2,14 +2,14 @@
 
 ## Phase 1: プロジェクトセットアップ
 
-- [ ] 1.1 ディレクトリ構造の作成
+- [x] 1.1 ディレクトリ構造の作成
   ```
   src/asken_garmin_sync/
     __init__.py, handler.py, config.py, asken_client.py, garmin_client.py, sync.py, models.py
   tests/
     __init__.py, test_asken_client.py, test_garmin_client.py, test_sync.py, test_handler.py, conftest.py
   ```
-- [ ] 1.2 `pyproject.toml` 作成（依存パッケージ定義）
+- [x] 1.2 `pyproject.toml` 作成（依存パッケージ定義）
   - Runtime: `garminconnect`, `requests`, `beautifulsoup4`, `boto3`, `lxml`
   - Dev: `pytest`, `pytest-mock`, `responses`, `moto`, `ruff`, `mypy`
 
