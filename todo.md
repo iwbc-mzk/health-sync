@@ -40,12 +40,12 @@
 
 ## Phase 5: Garmin Connect クライアント
 
-- [ ] 5.1 `garmin_client.py` - 認証付きクライアント初期化
+- [x] 5.1 `garmin_client.py` - 認証付きクライアント初期化
   - トークン復元 → 失敗時はフルログイン
   - MFA無効のアカウントが必要（制約として文書化）
-- [ ] 5.2 体重・体脂肪率の登録
+- [x] 5.2 体重・体脂肪率の登録
   - `add_body_composition(timestamp, weight, percent_fat)` を呼び出し
-- [ ] 5.3 アクティビティ消費カロリーの取得
+- [x] 5.3 アクティビティ消費カロリーの取得
   - `get_stats(cdate)` から totalKilocalories / activeKilocalories を取得
 
 ## Phase 6: 同期オーケストレーション
