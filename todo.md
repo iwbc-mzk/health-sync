@@ -50,11 +50,11 @@
 
 ## Phase 6: 同期オーケストレーション
 
-- [ ] 6.1 `sync.py` - `sync_body_composition_to_garmin()`
+- [x] 6.1 `sync.py` - `sync_body_composition_to_garmin()`
   - あすけんから取得 → Garmin Connect に登録
-- [ ] 6.2 `sync.py` - `sync_calories_to_asken()`
+- [x] 6.2 `sync.py` - `sync_calories_to_asken()`
   - Garmin Connect から取得 → あすけんに登録
-- [ ] 6.3 `sync.py` - `run_sync()`
+- [x] 6.3 `sync.py` - `run_sync()`
   - 両方向を独立に実行（片方失敗しても他方は続行）
   - 実行後にGarminトークンを永続化
 
