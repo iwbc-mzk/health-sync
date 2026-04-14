@@ -1,0 +1,8 @@
+# Lambda ランタイム依存パッケージ（SAM ビルド用）
+# - boto3 は Lambda 実行環境に組み込み済みのため除外（デプロイパッケージ肥大化防止）
+# - ローカル開発時は pyproject.toml の [project.dependencies] を使用すること
+# - バージョンは動作確認済み環境のものを固定（garminconnect は破壊的変更が多いため要注意）
+garminconnect==0.3.2
+requests==2.32.5
+beautifulsoup4==4.14.3
+lxml==6.0.2

@@ -67,11 +67,11 @@
 
 ## Phase 8: AWS インフラ
 
-- [ ] 8.1 `template.yaml` (SAM テンプレート)
-  - Lambda: Python 3.12, 256MB, timeout 60s
+- [x] 8.1 `template.yaml` (SAM テンプレート)
+  - Lambda: Python 3.12, 256MB, timeout 300s
   - EventBridge Scheduler: `rate(30 minutes)`
-  - IAM: secretsmanager:GetSecretValue, PutSecretValue, Lambda基本実行ロール
-- [ ] 8.2 CloudWatch ログ設定 (保持期間30日)
+  - IAM: secretsmanager:GetSecretValue, PutSecretValue, DescribeSecret, Lambda基本実行ロール
+- [x] 8.2 CloudWatch ログ設定 (保持期間30日)
 
 ## Phase 9: エラーハンドリング
 

@@ -1,0 +1,126 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  asken-garmin-sync
+  あすけん ↔ Garmin Connect 双方向データ同期 Lambda
+
+# ─── グローバル設定 ──────────────────────────────────────────────────────────
+Globals:
+  Function:
+    Runtime: python3.12
+    # Timeout の根拠（現実的な最悪ケース想定）:
+    #   あすけんログイン: GET 30s + POST 30s = 60s（リトライなし）
+    #   各 HTTP 操作（最大3回試行）: 30s × 3回 + バックオフ（1+2）s = 93s/操作
+    #   実用上の主要ボトルネック2操作: ログイン 60s + 体重同期 93s + カロリー同期 93s = 246s
+    #   安全マージンを加えて 300s に設定。
+    #   ※ 4操作すべてが最悪ケースに当たる確率は極めて低い。
+    #   ※ Lambda の最大タイムアウトは 900s。
+    Timeout: 300
+    MemorySize: 256      # requests + BeautifulSoup + lxml のメモリ使用量を考慮
+    Environment:
+      Variables:
+        SECRET_NAME: !Ref SecretName
+
+# ─── パラメータ ──────────────────────────────────────────────────────────────
+Parameters:
+  SecretName:
+    Type: String
+    Default: asken-garmin-sync
+    # IAM リソース ARN に直接埋め込まれるため、使用可能文字を英数字・記号に制限する
+    AllowedPattern: '^[a-zA-Z0-9/_+=.@-]+$'
+    ConstraintDescription: >
+      英数字および /_+=.@- のみ使用可能です（スペース・特殊文字不可）。
+    Description: >
+      AWS Secrets Manager のシークレット名。
+      asken_email / asken_password / garmin_email / garmin_password /
+      garmin_tokens キーを含む JSON シークレットを事前に作成すること。
+
+# ─── リソース ────────────────────────────────────────────────────────────────
+Resources:
+
+  # CloudWatch ロググループ（保持期間 30 日）
+  # SyncFunction より先に定義し、LoggingConfig で参照することで
+  # Lambda 側のロググループ自動作成を抑制して保持期間を確実に設定する。
+  # ⚠️ LogGroupName は SyncFunction.Properties.FunctionName と必ず一致させること。
+  #   どちらかを変更した場合はもう一方も必ず更新する（2箇所の値を同期させる）。
+  #   例: FunctionName を "my-sync" に変更 → LogGroupName を "/aws/lambda/my-sync" に変更。
+  #   注: LogGroupName を !Sub '/aws/lambda/${SyncFunction}' で自動参照する構成は
+  #   SyncFunction → SyncFunctionLogGroup の依存と循環するため採用できない。
+  SyncFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/asken-garmin-sync
+      RetentionInDays: 30
+
+  # Lambda 関数
+  SyncFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: asken-garmin-sync
+      # src/ レイアウトのため CodeUri を src に設定する。
+      # SAM は src/requirements.txt を参照して依存パッケージをインストールし、
+      # src/asken_garmin_sync/ を /var/task/asken_garmin_sync/ として配置する。
+      CodeUri: src/
+      Handler: asken_garmin_sync.handler.lambda_handler
+      Description: あすけん ↔ Garmin Connect 双方向データ同期
+
+      # 同時実行数を 1 に制限:
+      # config.save_garmin_tokens() は read-modify-write であり
+      # AWS Secrets Manager に CAS API がないため並行実行によるトークン破壊を防ぐ。
+      ReservedConcurrentExecutions: 1
+
+      # CloudWatch ロググループを明示指定することで Lambda の自動作成を抑制し、
+      # 事前作成済みのロググループ（保持期間 30 日設定済み）を使用させる。
+      # !Ref による参照が CloudFormation の暗黙的な DependsOn として機能する。
+      LoggingConfig:
+        LogGroup: !Ref SyncFunctionLogGroup
+
+      # Lambda 非同期呼び出し（EventBridge Scheduler からの呼び出し）の失敗時リトライを無効化。
+      # 認証エラー等で Lambda が例外を送出した場合もリトライしない（次の30分スケジュールを待つ）。
+      EventInvokeConfig:
+        MaximumRetryAttempts: 0
+
+      Policies:
+        # Lambda 基本実行ロール（CloudWatch Logs への書き込み）
+        - AWSLambdaBasicExecutionRole
+        # Secrets Manager アクセス（認証情報の読み取り + Garmin トークンの書き戻し）
+        - Statement:
+            - Sid: SecretsManagerReadWrite
+              Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue    # 認証情報・Garmin トークンの読み取り
+                - secretsmanager:PutSecretValue    # Garmin トークンの書き戻し
+                - secretsmanager:DescribeSecret    # シークレット存在確認・メタデータ取得
+              # Secrets Manager は ARN 末尾に 6 文字のランダムサフィックスを付与する
+              Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretName}-*'
+
+      Events:
+        SyncSchedule:
+          Type: ScheduleV2
+          Properties:
+            Name: asken-garmin-sync-schedule
+            ScheduleExpression: rate(30 minutes)
+            State: ENABLED
+            Description: あすけん ↔ Garmin Connect 30分間隔同期
+            # ScheduleV2 の必須プロパティ。OFF = スケジュール時刻に正確に実行。
+            FlexibleTimeWindow:
+              Mode: OFF
+            # Lambda 実行失敗（認証エラー等による例外送出）時はリトライしない。
+            # 内部接続エラー（AskenError/GarminError）は run_sync() 内で捕捉されるため
+            # Lambda は正常終了し、このポリシーは適用されない。
+            # Lambda スロットリングは FlexibleTimeWindow と ReservedConcurrentExecutions=1
+            # の組み合わせで制御する（前の実行が終了するまで次のスケジュールは実行されない）。
+
+# ─── 出力 ────────────────────────────────────────────────────────────────────
+Outputs:
+  SyncFunctionArn:
+    Description: 同期 Lambda 関数の ARN
+    Value: !GetAtt SyncFunction.Arn
+
+  SyncFunctionName:
+    Description: 同期 Lambda 関数名
+    Value: !Ref SyncFunction
+
+  LogGroupName:
+    Description: CloudWatch ロググループ名
+    Value: !Ref SyncFunctionLogGroup
