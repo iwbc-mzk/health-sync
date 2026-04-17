@@ -92,13 +92,14 @@
 
 ## Phase 11: デプロイ
 
-- [ ] 11.1 `sam build` + `sam deploy` でデプロイ
-- [ ] 11.2 初回デプロイチェックリスト
-  1. Secrets Manager にシークレット作成
-  2. SAM スタックデプロイ
+- [x] 11.1 `sam build` + `sam deploy` でデプロイ
+  - `scripts/deploy.sh` — 前提条件チェック・シークレット確認・SAM build/deploy・デプロイ後ガイダンスを自動化
+- [x] 11.2 初回デプロイチェックリスト
+  1. `scripts/create_secret.sh` で Secrets Manager にシークレット作成
+  2. `scripts/deploy.sh` で SAM スタックデプロイ
   3. Lambda 手動実行 (Garmin トークン確立)
   4. 両サービスでデータ連携を確認
-  5. EventBridge スケジュール有効化
+  5. EventBridge スケジュール有効化 (デプロイ時に自動で ENABLED)
 
 ---
 

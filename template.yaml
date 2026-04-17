@@ -55,6 +55,9 @@ Resources:
   # Lambda 関数
   SyncFunction:
     Type: AWS::Serverless::Function
+    # SyncFunctionLogGroup を先に作成することで Lambda のロググループ自動作成より
+    # 先に保持期間 30 日設定済みのロググループが存在する状態にする。
+    DependsOn: SyncFunctionLogGroup
     Properties:
       FunctionName: asken-garmin-sync
       # src/ レイアウトのため CodeUri を src に設定する。
@@ -68,17 +71,6 @@ Resources:
       # config.save_garmin_tokens() は read-modify-write であり
       # AWS Secrets Manager に CAS API がないため並行実行によるトークン破壊を防ぐ。
       ReservedConcurrentExecutions: 1
-
-      # CloudWatch ロググループを明示指定することで Lambda の自動作成を抑制し、
-      # 事前作成済みのロググループ（保持期間 30 日設定済み）を使用させる。
-      # !Ref による参照が CloudFormation の暗黙的な DependsOn として機能する。
-      LoggingConfig:
-        LogGroup: !Ref SyncFunctionLogGroup
-
-      # Lambda 非同期呼び出し（EventBridge Scheduler からの呼び出し）の失敗時リトライを無効化。
-      # 認証エラー等で Lambda が例外を送出した場合もリトライしない（次の30分スケジュールを待つ）。
-      EventInvokeConfig:
-        MaximumRetryAttempts: 0
 
       Policies:
         # Lambda 基本実行ロール（CloudWatch Logs への書き込み）
@@ -104,12 +96,13 @@ Resources:
             Description: あすけん ↔ Garmin Connect 30分間隔同期
             # ScheduleV2 の必須プロパティ。OFF = スケジュール時刻に正確に実行。
             FlexibleTimeWindow:
-              Mode: OFF
-            # Lambda 実行失敗（認証エラー等による例外送出）時はリトライしない。
-            # 内部接続エラー（AskenError/GarminError）は run_sync() 内で捕捉されるため
-            # Lambda は正常終了し、このポリシーは適用されない。
-            # Lambda スロットリングは FlexibleTimeWindow と ReservedConcurrentExecutions=1
-            # の組み合わせで制御する（前の実行が終了するまで次のスケジュールは実行されない）。
+              Mode: 'OFF'
+            # Scheduler レベルのリトライを無効化。
+            # Lambda 実行失敗時は次の30分スケジュールを待つ。
+            # MaximumEventAgeInSeconds は仕様上 60 以上が必須のため最小値を設定。
+            RetryPolicy:
+              MaximumRetryAttempts: 0
+              MaximumEventAgeInSeconds: 60
 
 # ─── 出力 ────────────────────────────────────────────────────────────────────
 Outputs:

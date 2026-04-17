@@ -206,6 +206,19 @@ class TestGetSecrets:
         with pytest.raises(ValueError, match="garmin_tokens の JSON 解析"):
             get_secrets(_SECRET_NAME)
 
+    def test_garmin_tokens_empty_string_treated_as_none(self, sm_client):
+        """garmin_tokens が空文字列の場合は None として扱い、エラーにならない.
+
+        Secrets Manager 初期作成時に garmin_tokens を "" で初期化するケースに対応。
+        """
+        payload = {**_BASE_SECRET, "garmin_tokens": ""}
+        sm_client.create_secret(
+            Name=_SECRET_NAME, SecretString=json.dumps(payload)
+        )
+        result = get_secrets(_SECRET_NAME)
+
+        assert result.garmin_tokens is None
+
     def test_uses_default_secret_name_from_env(self, sm_client, monkeypatch):
         """SECRET_NAME 環境変数のデフォルト値を使用する."""
         monkeypatch.setenv("SECRET_NAME", _SECRET_NAME)

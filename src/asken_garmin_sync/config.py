@@ -117,7 +117,10 @@ def get_secrets(secret_name: str | None = None) -> Secrets:
 
     garmin_tokens: dict[str, dict[str, Any]] | None = None
     garmin_tokens_raw = raw.get("garmin_tokens")
-    if garmin_tokens_raw is not None:
+    # None と空文字列 ("") は「トークン未設定」として扱い、スキップする。
+    # create_secret.sh は null で初期化するが、Secrets Manager を手動編集して
+    # "" を設定した場合にも安全に動作するよう明示的に除外する。
+    if garmin_tokens_raw is not None and garmin_tokens_raw != "":
         if isinstance(garmin_tokens_raw, str):
             try:
                 garmin_tokens_raw = json.loads(garmin_tokens_raw)

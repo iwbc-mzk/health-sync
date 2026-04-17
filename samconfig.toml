@@ -1,26 +1,31 @@
-# AWS SAM デプロイ設定
-# 参考: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-config.html
+# AWS SAM deploy configuration
+# https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-config.html
 
 version = 0.1
 
 [default.global.parameters]
 stack_name = "asken-garmin-sync"
+region = "ap-northeast-1"
 
 [default.build.parameters]
 cached = true
 parallel = true
-# Windows / macOS 環境でビルドする場合、lxml 等のコンパイル済みパッケージを
-# Lambda 実行環境（Amazon Linux 2023）向けにビルドするため use_container を有効にする。
-# 要件: Docker が起動していること（docker run --rm hello-world で確認）。
+# use_container = true is required on Windows/macOS to build compiled packages
+# (e.g. lxml) for the Lambda runtime (Amazon Linux 2023).
+# Requires Docker to be running: docker run --rm hello-world
 use_container = true
 
 [default.deploy.parameters]
 capabilities       = "CAPABILITY_IAM"
 confirm_changeset  = true
 resolve_s3         = true
-# region と profile は環境に合わせて設定すること
+# Set region and profile for your environment:
 # region  = "ap-northeast-1"
 # profile = "default"
+s3_prefix = "asken-garmin-sync"
+profile = "default"
+parameter_overrides = "SecretName=\"asken-garmin-sync\""
+image_repositories = []
 
 [default.sync.parameters]
 watch = true

@@ -2,23 +2,15 @@
 <html>
 <head><title>あすけん | 運動</title></head>
 <body>
-<div id="karute_body_exercise">
-  <table class="main_layout">
-    <tr>
-      <td class="detail_area">
-        <table class="detail_table">
-          <tr>
-            <td class="name">ウォーキング（普通）</td>
-            <td class="quantity">30分</td>
-            <td class="energy">120kcal</td>
-          </tr>
-        </table>
-      </td>
-      <td class="button_area">
-        <a href="#" onclick="WspExerciseV2.delete_exercise_v2('exercise', 'authcode_abc123');">削除</a>
-      </td>
-    </tr>
-  </table>
+<div id="sports_item_area">
+    <div id="sports_item"></div>
+    <div id="cal">消費カロリー　<span id="exercise_total_energy">0</span>kcal</div>
+    <script type="text/javascript">
+    //<![CDATA[
+    WspExerciseV2.exeDatas = {"do":"1","total":"29","menus":[{"id":"20260413_1061","item_type":"0","amount":"30","used_calory":"29","name":"\u30b8\u30e0\u30fb\u30d5\u30a3\u30c3\u30c8\u30cd\u30b9\u30af\u30e9\u30d6\u3067\u306e\u904b\u52d5","cal":"10\u5206\u3042\u305f\u308a\/\u7d0459kcal","unit_type":"1","code":"1061","dcode":"1061","authcode":"authcode_abc123","amount_type":"1","amount_v2":"30"}]};
+    WspExerciseV2.view_list();
+    //]]>
+    </script>
 </div>
 </body>
 </html>
