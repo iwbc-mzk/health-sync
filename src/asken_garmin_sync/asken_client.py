@@ -33,8 +33,8 @@ _HEADERS: dict[str, str] = {
 # 運動登録のデフォルト設定
 # exercise_id はあすけん運動カタログの ID（要確認）
 # cal_per_min は選択した運動種目の消費カロリー/分
-DEFAULT_EXERCISE_ID: int = 1
-DEFAULT_CAL_PER_MIN: float = 4.0  # kcal/分
+DEFAULT_EXERCISE_ID: int = 1061 # ジム・フィットネスクラブでの運動
+DEFAULT_CAL_PER_MIN: float = 5.8  # kcal/分
 
 # リトライ設定（認証エラーはリトライしない）
 # max_retries=2 は「初回1回 + 最大2回リトライ = 合計最大3回試行」を意味する
@@ -247,14 +247,18 @@ class AskenClient:
 
     # ─── 運動カロリー登録 ────────────────────────────────────────────────────
 
-    _AUTHCODE_RE = re.compile(r"delete_exercise_v2\('([^']+)',\s*'([^']+)'\)")
+    _EXE_DATAS_RE = re.compile(
+        r"WspExerciseV2\.exeDatas\s*=\s*(\{.*?\});",
+        re.DOTALL,
+    )
 
-    def _get_exercise_entries(self, target_date: date) -> list[tuple[str, str]]:
-        """運動ページから既存エントリの (item_type, authcode) リストを取得する.
+    def _get_exercise_entries(self, target_date: date) -> list[tuple[str, str, str]]:
+        """運動ページから既存エントリの (item_type, authcode, code) リストを取得する.
 
-        onclick 属性から正規表現で authcode を抽出する。
-        BeautifulSoup でパース後の属性値に適用することで
-        HTML エンティティのエスケープ問題を回避する。
+        運動リストは JavaScript の WspExerciseV2.exeDatas に JSON として埋め込まれており、
+        view_list() で動的レンダリングされる。BeautifulSoup で script タグを探し、
+        JSON を抽出して menus 配列の item_type / authcode / code を返す。
+        code は運動カタログ ID で、スクリプト登録エントリと手動登録エントリの判別に使用する。
         """
         url = _EXERCISE_URL.format(date=target_date.isoformat())
         resp = _request_with_retry(
@@ -262,13 +266,24 @@ class AskenClient:
         )
         soup = BeautifulSoup(resp.text, "lxml")
 
-        entries: list[tuple[str, str]] = []
-        for tag in soup.find_all(onclick=self._AUTHCODE_RE):
-            onclick_val = tag.get("onclick", "")
-            if not isinstance(onclick_val, str):
+        entries: list[tuple[str, str, str]] = []
+        for script in soup.find_all("script"):
+            script_text = script.string or ""
+            match = self._EXE_DATAS_RE.search(script_text)
+            if not match:
                 continue
-            for match in self._AUTHCODE_RE.finditer(onclick_val):
-                entries.append((match.group(1), match.group(2)))
+            try:
+                data: dict[str, Any] = json.loads(match.group(1))
+            except json.JSONDecodeError:
+                logger.warning("WspExerciseV2.exeDatas の JSON パースに失敗しました")
+                break
+            for menu in data.get("menus", []):
+                item_type = str(menu.get("item_type", ""))
+                authcode = str(menu.get("authcode", ""))
+                code = str(menu.get("code", ""))
+                if item_type and authcode:
+                    entries.append((item_type, authcode, code))
+            break
 
         logger.debug("既存の運動エントリ %d 件を検出: %s", len(entries), target_date)
         return entries
@@ -278,6 +293,9 @@ class AskenClient:
     ) -> None:
         """運動エントリを削除する."""
         url = _EXERCISE_DELETE_URL.format(item_type=item_type, authcode=authcode)
+        # 削除 API は JSON レスポンスの契約がない（空ボディや HTML を返すことがある）。
+        # _request_with_retry 内の raise_for_status() で HTTP エラーは検出済みのため、
+        # HTTP 200 を成功とみなす。
         _request_with_retry(
             self._session.get,
             url,
@@ -326,7 +344,8 @@ class AskenClient:
     ) -> None:
         """Garmin のアクティビティカロリーをあすけん運動ページに登録する（上書き対応）.
 
-        既存の全運動エントリを削除してから新しいエントリを追加する。
+        exercise_id が一致するスクリプト登録エントリのみ削除してから新しいエントリを追加する。
+        手動で追加された運動エントリ（異なる exercise_id を持つもの）は保持する。
 
         Args:
             target_date: 対象日
@@ -341,14 +360,33 @@ class AskenClient:
             logger.info("カロリーが 0 以下のため運動登録をスキップ: %s", target_date)
             return
 
-        # 既存エントリを全削除（上書き）
+        # スクリプトが登録したエントリのみ削除（手動登録エントリは保持）
         entries = self._get_exercise_entries(target_date)
-        for item_type, authcode in entries:
+        for it, ac, code in entries:
+            if not code:
+                logger.warning(
+                    "code フィールドが空の運動エントリをスキップしました（手動エントリとして保持）: "
+                    "item_type=%s authcode=%s date=%s",
+                    it,
+                    ac,
+                    target_date,
+                )
+        script_entries = [
+            (it, ac) for it, ac, code in entries if code == str(exercise_id)
+        ]
+        manual_count = len(entries) - len(script_entries)
+        if manual_count > 0:
+            logger.info(
+                "手動追加の運動エントリ %d 件をスキップしました（保持）: %s",
+                manual_count,
+                target_date,
+            )
+        for item_type, authcode in script_entries:
             self._delete_exercise_entry(target_date, item_type, authcode)
             time.sleep(0.3)  # 連続削除のレート制限対策
 
-        if entries:
-            logger.debug("%d 件の既存運動エントリを削除しました", len(entries))
+        if script_entries:
+            logger.debug("%d 件のスクリプト登録運動エントリを削除しました", len(script_entries))
 
         # カロリーから運動時間を算出（5分単位、四捨五入、最小5分）
         # Python の round() は銀行家の丸めを使うため int(x + 0.5) で明示的に四捨五入する

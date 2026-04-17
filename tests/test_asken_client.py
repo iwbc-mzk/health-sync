@@ -1,7 +1,9 @@
 """asken_client のユニットテスト."""
 from __future__ import annotations
 
+import json
 from datetime import date
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -316,7 +318,35 @@ class TestGetExerciseEntries:
             fixture_html("exercise_with_entries.html")
         )
         entries = client._get_exercise_entries(date(2026, 4, 13))
-        assert entries == [("exercise", "authcode_abc123")]
+        assert entries == [("0", "authcode_abc123", "1061")]
+
+    def test_parses_multiple_entries(self):
+        """複数エントリ（異なる code を含む）を正しく取得する."""
+        client = self._make_client()
+        html = """
+        <html><body>
+        <script type="text/javascript">
+        WspExerciseV2.exeDatas = {"do":"1","total":"58","menus":[
+            {"item_type":"0","authcode":"authcode_aaa","amount":"5","code":"1061"},
+            {"item_type":"0","authcode":"authcode_bbb","amount":"5","code":"2000"}
+        ]};
+        WspExerciseV2.view_list();
+        </script>
+        </body></html>
+        """
+        resp = self._make_resp(html)
+        client._session.get.return_value = resp
+        entries = client._get_exercise_entries(date(2026, 4, 13))
+        assert entries == [("0", "authcode_aaa", "1061"), ("0", "authcode_bbb", "2000")]
+
+    def test_returns_empty_when_no_script_data(self):
+        """exeDatas が存在しない場合は空リストを返す."""
+        client = self._make_client()
+        html = "<html><body><p>運動なし</p></body></html>"
+        resp = self._make_resp(html)
+        client._session.get.return_value = resp
+        entries = client._get_exercise_entries(date(2026, 4, 13))
+        assert entries == []
 
     def test_empty_page_returns_empty_list(self, fixture_html):
         client = self._make_client()
@@ -326,6 +356,60 @@ class TestGetExerciseEntries:
         entries = client._get_exercise_entries(date(2026, 4, 13))
         assert entries == []
 
+
+
+# ─── AskenClient._delete_exercise_entry ─────────────────────────────────────
+
+
+class TestDeleteExerciseEntry:
+    def _make_client(self):
+        client = AskenClient.__new__(AskenClient)
+        client._session = MagicMock()
+        return client
+
+    def _make_get_resp(self, text: str = "") -> MagicMock:
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.url = "https://www.asken.jp/exercise/delete_v2/0/authcode_abc"
+        resp.raise_for_status = MagicMock()
+        resp.text = text
+        return resp
+
+    def test_success_with_empty_body(self):
+        """削除 API が空ボディで 200 を返す場合は成功とみなす."""
+        client = self._make_client()
+        client._session.get.return_value = self._make_get_resp()
+        client._delete_exercise_entry(date(2026, 4, 13), "0", "authcode_abc")
+
+    def test_success_with_html_body(self):
+        """削除 API が HTML 等の非 JSON ボディで 200 を返す場合も成功とみなす."""
+        client = self._make_client()
+        client._session.get.return_value = self._make_get_resp("<html>OK</html>")
+        client._delete_exercise_entry(date(2026, 4, 13), "0", "authcode_abc")
+
+    def test_http_403_raises_auth_error(self):
+        """削除 API が 403 を返す場合は AskenAuthError を送出する（リトライしない）."""
+        resp = MagicMock()
+        resp.status_code = 403
+        resp.url = "https://www.asken.jp/exercise/delete_v2/0/authcode_abc"
+        resp.raise_for_status = MagicMock()
+        client = self._make_client()
+        client._session.get.return_value = resp
+        with pytest.raises(AskenAuthError):
+            client._delete_exercise_entry(date(2026, 4, 13), "0", "authcode_abc")
+        client._session.get.assert_called_once()
+
+    def test_network_error_raises_asken_error(self):
+        import requests as req
+
+        client = self._make_client()
+        client._session.get.side_effect = req.ConnectionError("connection reset")
+
+        with patch("asken_garmin_sync.asken_client.time.sleep"):
+            with pytest.raises(AskenError, match="失敗しました"):
+                client._delete_exercise_entry(date(2026, 4, 13), "0", "authcode_abc")
+
+        assert client._session.get.call_count == 3
 
 
 # ─── AskenClient._add_exercise_entry ────────────────────────────────────────
@@ -417,9 +501,11 @@ class TestRegisterActivityCalories:
             mock_get.assert_not_called()
 
     def test_deletes_existing_and_adds_new(self):
+        """exercise_id が一致するエントリを削除して新規追加する."""
         client = self._make_client()
+        # code="1061" が DEFAULT_EXERCISE_ID=1061 と一致するため削除対象
         with (
-            patch.object(client, "_get_exercise_entries", return_value=[("exercise", "auth1")]),
+            patch.object(client, "_get_exercise_entries", return_value=[("0", "auth1", "1061")]),
             patch.object(client, "_delete_exercise_entry") as mock_del,
             patch.object(client, "_add_exercise_entry") as mock_add,
             patch("asken_garmin_sync.asken_client.time.sleep"),
@@ -427,9 +513,48 @@ class TestRegisterActivityCalories:
             client.register_activity_calories(
                 date(2026, 4, 13), calories=120, cal_per_min=4.0
             )
-            mock_del.assert_called_once_with(date(2026, 4, 13), "exercise", "auth1")
-            # 120 kcal ÷ 4.0 kcal/分 = 30分
-            mock_add.assert_called_once_with(date(2026, 4, 13), 1, 30)
+            mock_del.assert_called_once_with(date(2026, 4, 13), "0", "auth1")
+            # 120 kcal ÷ 4.0 kcal/分 = 30分、exercise_id はデフォルト 1061
+            mock_add.assert_called_once_with(date(2026, 4, 13), 1061, 30)
+
+    def test_does_not_delete_manual_entries(self):
+        """手動追加エントリ（code が exercise_id=1061 と不一致）は削除しない."""
+        client = self._make_client()
+        # code="9999" は DEFAULT_EXERCISE_ID=1061 と不一致 → 削除しない
+        with (
+            patch.object(client, "_get_exercise_entries", return_value=[("0", "auth_manual", "9999")]),
+            patch.object(client, "_delete_exercise_entry") as mock_del,
+            patch.object(client, "_add_exercise_entry"),
+        ):
+            client.register_activity_calories(date(2026, 4, 13), calories=120, cal_per_min=4.0)
+            mock_del.assert_not_called()
+
+    def test_deletes_only_script_entries_when_mixed(self):
+        """スクリプト登録エントリと手動エントリが混在する場合、スクリプト登録分のみ削除する."""
+        client = self._make_client()
+        entries = [
+            ("0", "auth_script", "1061"),  # スクリプト登録（DEFAULT_EXERCISE_ID=1061 と一致）
+            ("0", "auth_manual", "9999"),  # 手動追加
+        ]
+        with (
+            patch.object(client, "_get_exercise_entries", return_value=entries),
+            patch.object(client, "_delete_exercise_entry") as mock_del,
+            patch.object(client, "_add_exercise_entry"),
+            patch("asken_garmin_sync.asken_client.time.sleep"),
+        ):
+            client.register_activity_calories(date(2026, 4, 13), calories=120, cal_per_min=4.0)
+            mock_del.assert_called_once_with(date(2026, 4, 13), "0", "auth_script")
+
+    def test_entry_with_empty_code_is_not_deleted(self):
+        """code フィールドが空のエントリは安全のため削除しない（手動エントリとして保持）."""
+        client = self._make_client()
+        with (
+            patch.object(client, "_get_exercise_entries", return_value=[("0", "auth_unknown", "")]),
+            patch.object(client, "_delete_exercise_entry") as mock_del,
+            patch.object(client, "_add_exercise_entry"),
+        ):
+            client.register_activity_calories(date(2026, 4, 13), calories=120, cal_per_min=4.0)
+            mock_del.assert_not_called()
 
     def test_no_delete_when_no_existing_entries(self):
         client = self._make_client()
@@ -440,8 +565,8 @@ class TestRegisterActivityCalories:
         ):
             client.register_activity_calories(date(2026, 4, 13), calories=80, cal_per_min=4.0)
             mock_del.assert_not_called()
-            # 80 ÷ 4.0 = 20分
-            mock_add.assert_called_once_with(date(2026, 4, 13), 1, 20)
+            # 80 ÷ 4.0 = 20分、exercise_id はデフォルト 1061
+            mock_add.assert_called_once_with(date(2026, 4, 13), 1061, 20)
 
     @pytest.mark.parametrize(
         "calories, cal_per_min, expected_minutes",
