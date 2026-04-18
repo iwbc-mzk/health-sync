@@ -42,4 +42,13 @@ def get_credentials(secret_name: str | None = None) -> Credentials:
     Raises:
         Exception: シークレット取得失敗
     """
-    raise NotImplementedError
+    name = secret_name or os.environ.get("SECRET_NAME") or _DEFAULT_SECRET_NAME
+    logger.debug("Secrets Manager からシークレットを取得: %s", name)
+    response = _secrets_client.get_secret_value(SecretId=name)
+    secret = json.loads(response["SecretString"])
+    return Credentials(
+        asken_email=secret["asken_email"],
+        asken_password=secret["asken_password"],
+        myfitnesspal_email=secret["myfitnesspal_email"],
+        myfitnesspal_password=secret["myfitnesspal_password"],
+    )
