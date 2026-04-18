@@ -5,6 +5,7 @@
 #   1 = 静的解析エラー → エラーをClaudeに注入
 #   2 = 4回連続失敗 → 実装停止・人間エスカレーション指示
 
+export LC_ALL=C
 set -euo pipefail
 
 COUNTER_FILE="/tmp/asken_eval_failures"

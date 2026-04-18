@@ -88,7 +88,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     # 認証エラーは例外として伝播するが、操作エラーは result に記録されるため
     # CloudWatch アラートのトリガーとなるログを明示的に出力する。
     errors = {
-        k: v["error"] for k, v in result.items() if v.get("error") is not None  # type: ignore[union-attr]
+        k: v["error"] for k, v in result.items() if v.get("error") is not None  # type: ignore[index, attr-defined]
     }
     if errors:
         logger.warning("一部の同期でエラーが発生しました: %s", errors)

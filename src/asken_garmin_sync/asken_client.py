@@ -211,7 +211,7 @@ class AskenClient:
             logger.warning("体重入力フィールドが見つかりません: %s", target_date)
             return None
 
-        weight_raw = weight_input.get("value")  # type: ignore[union-attr]
+        weight_raw = weight_input.get("value")
         weight_str = str(weight_raw).strip() if weight_raw is not None else ""
 
         if not weight_str:
@@ -225,7 +225,7 @@ class AskenClient:
 
         body_fat: float | None = None
         if fat_input is not None:
-            fat_raw = fat_input.get("value")  # type: ignore[union-attr]
+            fat_raw = fat_input.get("value")
             fat_str = str(fat_raw).strip() if fat_raw is not None else ""
             if fat_str:
                 try:

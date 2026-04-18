@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<!--
+  あすけん 食事記録ページの HTML フィクスチャ（代表的なサンプル構造）
+  Phase 4 のサイト調査後、実際の HTML 構造に置き換えること。
+  食事区分: 朝食 / 昼食 / 夕食 / 間食（複数可）
+-->
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>あすけん - 食事記録</title>
+</head>
+<body>
+  <a href="/logout">ログアウト</a>
+
+  <!-- 朝食 -->
+  <div class="meal-section" data-meal-type="breakfast">
+    <h3>朝食</h3>
+    <table class="meal-table">
+      <tbody>
+        <tr class="meal-total">
+          <td class="meal-calories">500</td>
+          <td class="meal-protein">20.5</td>
+          <td class="meal-fat">15.0</td>
+          <td class="meal-carbs">70.0</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 昼食 -->
+  <div class="meal-section" data-meal-type="lunch">
+    <h3>昼食</h3>
+    <table class="meal-table">
+      <tbody>
+        <tr class="meal-total">
+          <td class="meal-calories">700</td>
+          <td class="meal-protein">30.0</td>
+          <td class="meal-fat">20.0</td>
+          <td class="meal-carbs">90.0</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 夕食 -->
+  <div class="meal-section" data-meal-type="dinner">
+    <h3>夕食</h3>
+    <table class="meal-table">
+      <tbody>
+        <tr class="meal-total">
+          <td class="meal-calories">650</td>
+          <td class="meal-protein">35.0</td>
+          <td class="meal-fat">18.0</td>
+          <td class="meal-carbs">80.0</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 間食（複数エントリ） -->
+  <div class="meal-section" data-meal-type="snack">
+    <h3>間食</h3>
+    <table class="meal-table">
+      <tbody>
+        <!-- 間食エントリ1 -->
+        <tr class="meal-item">
+          <td class="meal-calories">150</td>
+          <td class="meal-protein">3.0</td>
+          <td class="meal-fat">5.0</td>
+          <td class="meal-carbs">22.0</td>
+        </tr>
+        <!-- 間食エントリ2 -->
+        <tr class="meal-item">
+          <td class="meal-calories">100</td>
+          <td class="meal-protein">2.0</td>
+          <td class="meal-fat">3.0</td>
+          <td class="meal-carbs">18.0</td>
+        </tr>
+        <!-- 間食合計 -->
+        <tr class="meal-total">
+          <td class="meal-calories">250</td>
+          <td class="meal-protein">5.0</td>
+          <td class="meal-fat">8.0</td>
+          <td class="meal-carbs">40.0</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</body>
+</html>

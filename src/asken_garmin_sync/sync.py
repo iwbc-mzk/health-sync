@@ -5,9 +5,9 @@ import logging
 from datetime import date
 from typing import TypedDict
 
-from .asken_client import AskenClient, AskenAuthError, AskenError
+from .asken_client import AskenClient, AskenError
 from .config import cleanup_token_dir, get_secrets, load_garmin_tokens, save_garmin_tokens
-from .garmin_client import GarminAuthError, GarminClient, GarminError
+from .garmin_client import GarminClient, GarminError
 
 logger = logging.getLogger(__name__)
 

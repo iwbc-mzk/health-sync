@@ -1,11 +1,11 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
-name = "asken-garmin-sync"
+name = "asken-sync"
 version = "0.1.0"
-description = "あすけん と Garmin Connect 間のデータ同期ツール"
+description = "あすけん を起点とした各サービスへのデータ同期ツール群"
 requires-python = ">=3.12"
 dependencies = [
     "garminconnect",
@@ -40,6 +40,7 @@ select = ["E", "F", "I", "UP"]
 python_version = "3.12"
 strict = true
 ignore_missing_imports = true
+disable_error_code = ["import-untyped"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

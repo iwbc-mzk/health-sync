@@ -39,7 +39,7 @@ def _secrets_client() -> SecretsManagerClient:
     """
     global _secrets_client_instance
     if _secrets_client_instance is None:
-        _secrets_client_instance = boto3.client("secretsmanager")  # type: ignore[assignment]
+        _secrets_client_instance = boto3.client("secretsmanager")
     return _secrets_client_instance
 
 
