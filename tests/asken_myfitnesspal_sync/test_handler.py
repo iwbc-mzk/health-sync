@@ -11,7 +11,7 @@ from src.asken_myfitnesspal_sync.handler import lambda_handler
 
 class TestLambdaHandler:
     def test_returns_200_on_success(self):
-        mock_result = {"registered": 2, "skipped": 1, "errors": []}
+        mock_result = {"registered": 2, "skipped": 1, "errors": 0}
         with (
             patch(
                 "src.asken_myfitnesspal_sync.handler.get_target_date",

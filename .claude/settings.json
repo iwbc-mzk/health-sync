@@ -19,7 +19,10 @@
       "Bash(python3 *)",
       "Bash(python *)",
       "Bash(mypy *)",
-      "Bash(python -c *)"
+      "Bash(python -c *)",
+      "WebFetch(domain:myfitnesspalapi.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:github.com)"
     ]
   },
   "hooks": {

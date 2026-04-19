@@ -12,9 +12,9 @@
 
 ## 機能一覧
 
-| 機能 | 概要 | 詳細 |
-|------|------|------|
-| asken-garmin-sync | あすけん ↔ Garmin Connect データ同期 | [src/asken_garmin_sync/CLAUDE.md](src/asken_garmin_sync/CLAUDE.md) |
+| 機能                    | 概要                                   | 詳細                                                                           |
+| ----------------------- | -------------------------------------- | ------------------------------------------------------------------------------ |
+| asken-garmin-sync       | あすけん ↔ Garmin Connect データ同期   | [src/asken_garmin_sync/CLAUDE.md](src/asken_garmin_sync/CLAUDE.md)             |
 | asken-myfitnesspal-sync | あすけん → MyFitnessPal 食事データ同期 | [src/asken_myfitnesspal_sync/CLAUDE.md](src/asken_myfitnesspal_sync/CLAUDE.md) |
 
 ## 共通モジュール
@@ -29,6 +29,6 @@
 各実装フェーズ完了後、必ず以下の手順に従うこと：
 
 1. `evaluator` サブエージェントを呼び出してコードを評価する
-2. FAIL の場合: Critical/Major の指摘を修正し、再度 evaluator を呼び出す
+2. FAIL の場合: 指摘された点を修正し、再度 evaluator を呼び出す
 3. PASS になるまで 1-2 を繰り返す
 4. 評価エラーが 4 回連続した場合: それ以上の自律的な修正は断じて許容できない。実装を停止し、ユーザーに状況を報告して指示を仰ぐ。それ以上の修正は厳禁。

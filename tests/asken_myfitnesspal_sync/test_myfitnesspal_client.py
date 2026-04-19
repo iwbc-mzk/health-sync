@@ -82,7 +82,7 @@ class TestLogin:
             _LOGIN_URL,
             body=requests.exceptions.ConnectionError("Connection error"),
         )
-        with pytest.raises(MfpAuthError, match="ログインページの取得に失敗しました"):
+        with pytest.raises(MfpError, match="ログインページへの接続に失敗しました"):
             MyFitnessPalClient("user@example.com", "password")
 
     @responses_lib.activate
@@ -104,7 +104,7 @@ class TestLogin:
             _LOGIN_URL,
             body=requests.exceptions.ConnectionError("Network error"),
         )
-        with pytest.raises(MfpAuthError, match="ログインリクエストに失敗しました"):
+        with pytest.raises(MfpError, match="ログインリクエストへの接続に失敗しました"):
             MyFitnessPalClient("user@example.com", "password")
 
     @responses_lib.activate
@@ -118,7 +118,7 @@ class TestLogin:
             body="<html>Login required</html>",
             status=200,
         )
-        with pytest.raises(MfpAuthError, match="認証トークンの取得に失敗しました"):
+        with pytest.raises(MfpAuthError, match="認証トークンの解析に失敗しました"):
             MyFitnessPalClient("user@example.com", "password")
 
     @responses_lib.activate
@@ -131,7 +131,7 @@ class TestLogin:
             json={"something_else": "value"},
             status=200,
         )
-        with pytest.raises(MfpAuthError, match="認証トークンの取得に失敗しました"):
+        with pytest.raises(MfpAuthError, match="認証トークンの解析に失敗しました"):
             MyFitnessPalClient("user@example.com", "password")
 
     @responses_lib.activate

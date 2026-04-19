@@ -87,15 +87,15 @@
 
 ## Phase 6: 同期オーケストレーション
 
-- [ ] 6.1 `sync.py` - 重複チェックロジック
+- [x] 6.1 `sync.py` - 重複チェックロジック
   - MyFitnessPal の既存エントリを取得
   - カロリー・PFC が完全一致 → スキップ
   - いずれかが異なる → 既存エントリを削除して再登録
-- [ ] 6.2 `sync.py` - `sync_meals(date, credentials) -> SyncResult`
+- [x] 6.2 `sync.py` - `sync_meals(date, credentials) -> SyncResult`
   - あすけんから食事データ取得
   - 食事区分ごとに MyFitnessPal と比較・登録（個別エラーは WARNING ログ、継続）
   - 処理結果サマリーを返す（登録件数・スキップ件数・エラー件数）
-- [ ] 6.3 `sync.py` - `run_sync()`
+- [x] 6.3 `sync.py` - `run_sync()`
   - シークレット取得 → 対象日決定 → `sync_meals()` 呼び出し
   - 認証エラーは例外として伝播
 

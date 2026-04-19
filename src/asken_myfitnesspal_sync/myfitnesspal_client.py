@@ -111,12 +111,14 @@ class MyFitnessPalClient:
     def _login(self, email: str, password: str) -> None:
         """フォームベースのログインと Bearer トークン取得."""
         try:
-            login_page = self._session.get(
-                f"{_BASE_URL}/user/login", timeout=30
-            )
+            login_page = self._session.get(f"{_BASE_URL}/user/login", timeout=30)
             login_page.raise_for_status()
-        except requests.RequestException as exc:
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            raise MfpError(f"ログインページへの接続に失敗しました: {exc}") from exc
+        except requests.HTTPError as exc:
             raise MfpAuthError(f"ログインページの取得に失敗しました: {exc}") from exc
+        except requests.RequestException as exc:
+            raise MfpError(f"ログインページの取得に失敗しました: {exc}") from exc
 
         soup = BeautifulSoup(login_page.text, "lxml")
         token_input = soup.find("input", {"name": "authenticity_token"})
@@ -142,8 +144,12 @@ class MyFitnessPalClient:
                 allow_redirects=True,
             )
             resp.raise_for_status()
-        except requests.RequestException as exc:
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            raise MfpError(f"ログインリクエストへの接続に失敗しました: {exc}") from exc
+        except requests.HTTPError as exc:
             raise MfpAuthError(f"ログインリクエストに失敗しました: {exc}") from exc
+        except requests.RequestException as exc:
+            raise MfpError(f"ログインリクエストに失敗しました: {exc}") from exc
 
         try:
             auth_resp = self._session.get(
@@ -152,12 +158,20 @@ class MyFitnessPalClient:
                 timeout=30,
             )
             auth_resp.raise_for_status()
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            raise MfpError(f"認証トークン取得への接続に失敗しました: {exc}") from exc
+        except requests.HTTPError as exc:
+            raise MfpAuthError(f"認証トークンの取得に失敗しました: {exc}") from exc
+        except requests.RequestException as exc:
+            raise MfpError(f"認証トークンの取得に失敗しました: {exc}") from exc
+
+        try:
             auth_data = auth_resp.json()
             self._access_token = auth_data["access_token"]
             self._user_id = str(auth_data["user_id"])
-        except (requests.RequestException, KeyError, json.JSONDecodeError) as exc:
+        except (json.JSONDecodeError, KeyError) as exc:
             raise MfpAuthError(
-                f"認証トークンの取得に失敗しました（ログイン失敗または CAPTCHA が発生した可能性があります）: {exc}"
+                f"認証トークンの解析に失敗しました（ログイン失敗または CAPTCHA が発生した可能性があります）: {exc}"
             ) from exc
 
         logger.info("MyFitnessPal にログインしました", extra={"user_id": self._user_id})
