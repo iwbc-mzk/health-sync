@@ -133,23 +133,11 @@ def run_sync(target_date: date | None = None, secret_name: str | None = None) ->
     if target_date is None:
         target_date = get_target_date()
 
-    logger.info(
-        "同期開始: %s", target_date, extra={"date": target_date.isoformat()}
-    )
-
     result = sync_meals(target_date, credentials)
 
-    summary: dict[str, object] = {
+    return {
         "date": target_date.isoformat(),
         "registered": result.registered,
         "skipped": result.skipped,
         "errors": result.error_count,
     }
-    logger.info(
-        "同期完了: 登録 %d 件、スキップ %d 件、エラー %d 件",
-        result.registered,
-        result.skipped,
-        result.error_count,
-        extra=summary,
-    )
-    return summary

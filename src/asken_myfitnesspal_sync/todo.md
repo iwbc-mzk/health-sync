@@ -101,11 +101,11 @@
 
 ## Phase 7: Lambda ハンドラー
 
-- [ ] 7.1 `handler.py` - Lambda エントリーポイント
+- [x] 7.1 `handler.py` - Lambda エントリーポイント
   - 対象日は JST 基準で当日（`zoneinfo.ZoneInfo("Asia/Tokyo")`）
   - `TARGET_DATE` 環境変数でオーバーライド可能
   - boto3 クライアントはモジュールレベルで初期化（ウォームスタート最適化）
-- [ ] 7.2 `logging_config.py` - JSON 構造化ログ設定
+- [x] 7.2 `logging_config.py` - JSON 構造化ログ設定
   - asken-garmin-sync の `logging_config.py` を流用（または `src/utils/` から import）
 
 ## Phase 8: AWS インフラ

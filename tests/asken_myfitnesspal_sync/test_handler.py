@@ -68,6 +68,43 @@ class TestLambdaHandler:
 
         mock_run_sync.assert_called_once_with(date(2024, 3, 15), secret_name="custom/secret")
 
+    def test_warning_logged_and_200_returned_when_errors_present(self):
+        mock_result = {"registered": 1, "skipped": 0, "errors": 2}
+        with (
+            patch(
+                "src.asken_myfitnesspal_sync.handler.get_target_date",
+                return_value=date(2024, 3, 15),
+            ),
+            patch(
+                "src.asken_myfitnesspal_sync.handler.run_sync",
+                return_value=mock_result,
+            ),
+            patch("src.asken_myfitnesspal_sync.handler.logger") as mock_logger,
+        ):
+            response = lambda_handler({}, MagicMock())
+
+        assert response["statusCode"] == 200
+        mock_logger.warning.assert_called_once()
+        warning_args = mock_logger.warning.call_args[0]
+        assert "errors" in warning_args[0]
+
+    def test_no_warning_when_no_errors(self):
+        mock_result = {"registered": 2, "skipped": 1, "errors": 0}
+        with (
+            patch(
+                "src.asken_myfitnesspal_sync.handler.get_target_date",
+                return_value=date(2024, 3, 15),
+            ),
+            patch(
+                "src.asken_myfitnesspal_sync.handler.run_sync",
+                return_value=mock_result,
+            ),
+            patch("src.asken_myfitnesspal_sync.handler.logger") as mock_logger,
+        ):
+            lambda_handler({}, MagicMock())
+
+        mock_logger.warning.assert_not_called()
+
     def test_uses_none_secret_name_when_env_absent(self):
         import os
 
