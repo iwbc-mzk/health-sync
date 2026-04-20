@@ -38,7 +38,8 @@ def _split_shell_operators(text):
     Inside single quotes, substitution characters are literal (bash semantics),
     so they are collected without raising.
 
-    Split points: &&, ||, |, ;, >, >> (each causes a new token).
+    Split points: &&, ||, |, ;, >, >>, newline (each causes a new token).
+    Shell comments (# at start of a token, outside quotes) are skipped to EOL.
     Redirection targets (>file) become separate tokens that won't match any
     allowed pattern, so they are implicitly blocked.
     """
@@ -82,14 +83,19 @@ def _split_shell_operators(text):
         elif ch == '"':
             in_double = True
             current.append(ch)
+        elif ch == '#' and not ''.join(current).strip():
+            # Shell comment at start of token: skip until end of line
+            while i < len(text) and text[i] != '\n':
+                i += 1
+            continue
         else:
-            # Outside all quotes — split on operators
+            # Outside all quotes — split on operators and newlines
             if two in ('&&', '||', '>>'):
                 parts.append(''.join(current).strip())
                 current = []
                 i += 2
                 continue
-            elif ch in ('|', ';', '>'):
+            elif ch in ('|', ';', '>', '\n'):
                 parts.append(''.join(current).strip())
                 current = []
             else:
@@ -107,19 +113,16 @@ def _split_shell_operators(text):
 
 
 def extract_subcommands(command):
-    """Return all sub-commands from every non-comment line of command.
+    """Return all sub-commands from command.
 
-    Raises ValueError (from _split_shell_operators) if any line contains
+    Processes the full command string at once so multi-line quoted arguments
+    (e.g. python -c "...") are parsed correctly.
+
+    Raises ValueError (from _split_shell_operators) if the command contains
     command substitution or unclosed quotes.
     """
-    sub_commands = []
-    for line in command.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        parts = _split_shell_operators(stripped)
-        sub_commands.extend(p.strip() for p in parts if p.strip())
-    return sub_commands
+    parts = _split_shell_operators(command)
+    return [p.strip() for p in parts if p.strip()]
 
 
 def is_dangerous(cmd):

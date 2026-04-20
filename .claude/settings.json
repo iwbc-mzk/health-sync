@@ -20,12 +20,14 @@
       "Bash(python3 -m *)",
       "Bash(python /workspace/*)",
       "Bash(python -m *)",
-      "Bash(python3 -c)",
-      "Bash(python -c)",
+      "Bash(python3 -c *)",
+      "Bash(python -c *)",
       "Bash(mypy *)",
       "WebFetch(domain:myfitnesspalapi.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(ruff check *)",
+      "Bash(git stash *)"
     ]
   },
   "hooks": {
