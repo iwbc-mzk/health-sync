@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.asken_myfitnesspal_sync.models import DailyMeals, MealNutrition, MealType
-from src.asken_myfitnesspal_sync.sync import (
+from asken_myfitnesspal_sync.models import DailyMeals, MealNutrition, MealType
+from asken_myfitnesspal_sync.sync import (
     MealSyncResult,
     _aggregate_nutrition,
     _is_same_nutrition,
@@ -29,7 +29,7 @@ def _make_credentials(
     mfp_email: str = "m@example.com",
     mfp_password: str = "mpass",
 ):
-    from src.asken_myfitnesspal_sync.config import Credentials
+    from asken_myfitnesspal_sync.config import Credentials
 
     return Credentials(asken_email, asken_password, mfp_email, mfp_password)
 
@@ -77,11 +77,11 @@ class TestSyncMeals:
     def _patch_clients(self, asken_mock: MagicMock, mfp_mock: MagicMock):
         return (
             patch(
-                "src.asken_myfitnesspal_sync.sync.AskenClient",
+                "asken_myfitnesspal_sync.sync.AskenClient",
                 return_value=asken_mock,
             ),
             patch(
-                "src.asken_myfitnesspal_sync.sync.MyFitnessPalClient",
+                "asken_myfitnesspal_sync.sync.MyFitnessPalClient",
                 return_value=mfp_mock,
             ),
         )
@@ -92,8 +92,9 @@ class TestSyncMeals:
             date=_DATE, meals=[_BREAKFAST]
         )
         mfp_mock = self._make_mfp_mock()
+        p_asken, p_mfp = self._patch_clients(asken_mock, mfp_mock)
 
-        with self._patch_clients(asken_mock, mfp_mock)[0], self._patch_clients(asken_mock, mfp_mock)[1]:
+        with p_asken, p_mfp:
             result = sync_meals(_DATE, _make_credentials())
 
         mfp_mock.add_meal_entry.assert_called_once_with(_DATE, _BREAKFAST)
@@ -111,8 +112,9 @@ class TestSyncMeals:
         mfp_mock.get_meal_entries.side_effect = lambda d, mt: (
             [_BREAKFAST] if mt == MealType.BREAKFAST else []
         )
+        p_asken, p_mfp = self._patch_clients(asken_mock, mfp_mock)
 
-        with self._patch_clients(asken_mock, mfp_mock)[0], self._patch_clients(asken_mock, mfp_mock)[1]:
+        with p_asken, p_mfp:
             result = sync_meals(_DATE, _make_credentials())
 
         mfp_mock.add_meal_entry.assert_not_called()
@@ -130,8 +132,9 @@ class TestSyncMeals:
         mfp_mock.get_meal_entries.side_effect = lambda d, mt: (
             [old_entry] if mt == MealType.BREAKFAST else []
         )
+        p_asken, p_mfp = self._patch_clients(asken_mock, mfp_mock)
 
-        with self._patch_clients(asken_mock, mfp_mock)[0], self._patch_clients(asken_mock, mfp_mock)[1]:
+        with p_asken, p_mfp:
             result = sync_meals(_DATE, _make_credentials())
 
         mfp_mock.delete_meal_entries.assert_called_once_with(_DATE, MealType.BREAKFAST)
@@ -142,8 +145,9 @@ class TestSyncMeals:
         asken_mock = MagicMock()
         asken_mock.get_daily_meals.return_value = DailyMeals(date=_DATE, meals=[])
         mfp_mock = self._make_mfp_mock()
+        p_asken, p_mfp = self._patch_clients(asken_mock, mfp_mock)
 
-        with self._patch_clients(asken_mock, mfp_mock)[0], self._patch_clients(asken_mock, mfp_mock)[1]:
+        with p_asken, p_mfp:
             result = sync_meals(_DATE, _make_credentials())
 
         mfp_mock.add_meal_entry.assert_not_called()
@@ -153,35 +157,38 @@ class TestSyncMeals:
 
     def test_no_error_when_asken_has_no_data_and_mfp_would_error(self):
         """欠食時は MFP API を叩かないため MfpError が発生しても error_count に影響しない."""
-        from src.asken_myfitnesspal_sync.myfitnesspal_client import MfpError
+        from asken_myfitnesspal_sync.myfitnesspal_client import MfpError
 
         asken_mock = MagicMock()
         asken_mock.get_daily_meals.return_value = DailyMeals(date=_DATE, meals=[])
         mfp_mock = self._make_mfp_mock()
         mfp_mock.get_meal_entries.side_effect = MfpError("should not be called")
+        p_asken, p_mfp = self._patch_clients(asken_mock, mfp_mock)
 
-        with self._patch_clients(asken_mock, mfp_mock)[0], self._patch_clients(asken_mock, mfp_mock)[1]:
+        with p_asken, p_mfp:
             result = sync_meals(_DATE, _make_credentials())
 
         mfp_mock.get_meal_entries.assert_not_called()
         assert result.error_count == 0
 
     def test_mfp_error_recorded_as_warning_and_continues(self):
-        from src.asken_myfitnesspal_sync.myfitnesspal_client import MfpError
+        from asken_myfitnesspal_sync.myfitnesspal_client import MfpError
 
         asken_mock = MagicMock()
         asken_mock.get_daily_meals.return_value = DailyMeals(
             date=_DATE, meals=[_BREAKFAST, _LUNCH]
         )
         mfp_mock = self._make_mfp_mock()
+
         def _get_entries(d, mt):
             if mt == MealType.BREAKFAST:
                 raise MfpError("API error")
             return []
 
         mfp_mock.get_meal_entries.side_effect = _get_entries
+        p_asken, p_mfp = self._patch_clients(asken_mock, mfp_mock)
 
-        with self._patch_clients(asken_mock, mfp_mock)[0], self._patch_clients(asken_mock, mfp_mock)[1]:
+        with p_asken, p_mfp:
             result = sync_meals(_DATE, _make_credentials())
 
         assert result.error_count == 1
@@ -189,7 +196,7 @@ class TestSyncMeals:
         assert "Breakfast" in result.errors[0]
 
     def test_mfp_auth_error_propagates(self):
-        from src.asken_myfitnesspal_sync.myfitnesspal_client import MfpAuthError
+        from asken_myfitnesspal_sync.myfitnesspal_client import MfpAuthError
 
         asken_mock = MagicMock()
         asken_mock.get_daily_meals.return_value = DailyMeals(
@@ -197,26 +204,32 @@ class TestSyncMeals:
         )
         mfp_mock = self._make_mfp_mock()
         mfp_mock.get_meal_entries.side_effect = MfpAuthError("auth error")
+        p_asken, p_mfp = self._patch_clients(asken_mock, mfp_mock)
 
-        with (
-            self._patch_clients(asken_mock, mfp_mock)[0],
-            self._patch_clients(asken_mock, mfp_mock)[1],
-            pytest.raises(MfpAuthError),
-        ):
+        with p_asken, p_mfp, pytest.raises(MfpAuthError):
             sync_meals(_DATE, _make_credentials())
 
     def test_asken_auth_error_propagates(self):
-        from src.asken_myfitnesspal_sync.asken_client import AskenAuthError
+        from asken_myfitnesspal_sync.asken_client import AskenAuthError
 
         asken_mock = MagicMock()
         asken_mock.get_daily_meals.side_effect = AskenAuthError("auth error")
         mfp_mock = self._make_mfp_mock()
+        p_asken, p_mfp = self._patch_clients(asken_mock, mfp_mock)
 
-        with (
-            self._patch_clients(asken_mock, mfp_mock)[0],
-            self._patch_clients(asken_mock, mfp_mock)[1],
-            pytest.raises(AskenAuthError),
-        ):
+        with p_asken, p_mfp, pytest.raises(AskenAuthError):
+            sync_meals(_DATE, _make_credentials())
+
+    def test_asken_error_propagates(self):
+        """HTML 構造変更等による AskenError（非認証）が sync_meals から伝播する."""
+        from asken_myfitnesspal_sync.asken_client import AskenError
+
+        asken_mock = MagicMock()
+        asken_mock.get_daily_meals.side_effect = AskenError("parse error")
+        mfp_mock = self._make_mfp_mock()
+        p_asken, p_mfp = self._patch_clients(asken_mock, mfp_mock)
+
+        with p_asken, p_mfp, pytest.raises(AskenError):
             sync_meals(_DATE, _make_credentials())
 
     def test_multiple_meal_types_processed(self):
@@ -225,8 +238,9 @@ class TestSyncMeals:
             date=_DATE, meals=[_BREAKFAST, _LUNCH, _DINNER, _SNACK]
         )
         mfp_mock = self._make_mfp_mock()
+        p_asken, p_mfp = self._patch_clients(asken_mock, mfp_mock)
 
-        with self._patch_clients(asken_mock, mfp_mock)[0], self._patch_clients(asken_mock, mfp_mock)[1]:
+        with p_asken, p_mfp:
             result = sync_meals(_DATE, _make_credentials())
 
         assert result.registered == 4
@@ -240,15 +254,15 @@ class TestRunSync:
 
         with (
             patch(
-                "src.asken_myfitnesspal_sync.sync.get_credentials",
+                "asken_myfitnesspal_sync.sync.get_credentials",
                 return_value=creds,
             ),
             patch(
-                "src.asken_myfitnesspal_sync.sync.get_target_date",
+                "asken_myfitnesspal_sync.sync.get_target_date",
                 return_value=_DATE,
             ),
             patch(
-                "src.asken_myfitnesspal_sync.sync.sync_meals",
+                "asken_myfitnesspal_sync.sync.sync_meals",
                 return_value=sync_result,
             ) as mock_sync,
         ):
@@ -266,11 +280,11 @@ class TestRunSync:
 
         with (
             patch(
-                "src.asken_myfitnesspal_sync.sync.get_credentials",
+                "asken_myfitnesspal_sync.sync.get_credentials",
                 return_value=creds,
             ),
             patch(
-                "src.asken_myfitnesspal_sync.sync.sync_meals",
+                "asken_myfitnesspal_sync.sync.sync_meals",
                 return_value=MealSyncResult(),
             ) as mock_sync,
         ):
@@ -279,21 +293,21 @@ class TestRunSync:
         mock_sync.assert_called_once_with(explicit_date, creds)
 
     def test_auth_error_propagates(self):
-        from src.asken_myfitnesspal_sync.myfitnesspal_client import MfpAuthError
+        from asken_myfitnesspal_sync.myfitnesspal_client import MfpAuthError
 
         creds = _make_credentials()
 
         with (
             patch(
-                "src.asken_myfitnesspal_sync.sync.get_credentials",
+                "asken_myfitnesspal_sync.sync.get_credentials",
                 return_value=creds,
             ),
             patch(
-                "src.asken_myfitnesspal_sync.sync.get_target_date",
+                "asken_myfitnesspal_sync.sync.get_target_date",
                 return_value=_DATE,
             ),
             patch(
-                "src.asken_myfitnesspal_sync.sync.sync_meals",
+                "asken_myfitnesspal_sync.sync.sync_meals",
                 side_effect=MfpAuthError("auth failed"),
             ),
             pytest.raises(MfpAuthError),

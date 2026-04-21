@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.asken_myfitnesspal_sync.handler import lambda_handler
+from asken_myfitnesspal_sync.handler import lambda_handler
 
 
 class TestLambdaHandler:
@@ -14,11 +14,11 @@ class TestLambdaHandler:
         mock_result = {"registered": 2, "skipped": 1, "errors": 0}
         with (
             patch(
-                "src.asken_myfitnesspal_sync.handler.get_target_date",
+                "asken_myfitnesspal_sync.handler.get_target_date",
                 return_value=date(2024, 3, 15),
             ),
             patch(
-                "src.asken_myfitnesspal_sync.handler.run_sync",
+                "asken_myfitnesspal_sync.handler.run_sync",
                 return_value=mock_result,
             ),
         ):
@@ -31,7 +31,7 @@ class TestLambdaHandler:
     def test_reraises_when_get_target_date_fails(self):
         with (
             patch(
-                "src.asken_myfitnesspal_sync.handler.get_target_date",
+                "asken_myfitnesspal_sync.handler.get_target_date",
                 side_effect=ValueError("TARGET_DATE の形式が不正です"),
             ),
             pytest.raises(ValueError, match="TARGET_DATE"),
@@ -41,11 +41,11 @@ class TestLambdaHandler:
     def test_reraises_when_run_sync_fails(self):
         with (
             patch(
-                "src.asken_myfitnesspal_sync.handler.get_target_date",
+                "asken_myfitnesspal_sync.handler.get_target_date",
                 return_value=date(2024, 3, 15),
             ),
             patch(
-                "src.asken_myfitnesspal_sync.handler.run_sync",
+                "asken_myfitnesspal_sync.handler.run_sync",
                 side_effect=RuntimeError("auth error"),
             ),
             pytest.raises(RuntimeError, match="auth error"),
@@ -58,10 +58,10 @@ class TestLambdaHandler:
         mock_run_sync = MagicMock(return_value={})
         with (
             patch(
-                "src.asken_myfitnesspal_sync.handler.get_target_date",
+                "asken_myfitnesspal_sync.handler.get_target_date",
                 return_value=date(2024, 3, 15),
             ),
-            patch("src.asken_myfitnesspal_sync.handler.run_sync", mock_run_sync),
+            patch("asken_myfitnesspal_sync.handler.run_sync", mock_run_sync),
             patch.dict(os.environ, {"SECRET_NAME": "custom/secret"}, clear=False),
         ):
             lambda_handler({}, MagicMock())
@@ -72,14 +72,14 @@ class TestLambdaHandler:
         mock_result = {"registered": 1, "skipped": 0, "errors": 2}
         with (
             patch(
-                "src.asken_myfitnesspal_sync.handler.get_target_date",
+                "asken_myfitnesspal_sync.handler.get_target_date",
                 return_value=date(2024, 3, 15),
             ),
             patch(
-                "src.asken_myfitnesspal_sync.handler.run_sync",
+                "asken_myfitnesspal_sync.handler.run_sync",
                 return_value=mock_result,
             ),
-            patch("src.asken_myfitnesspal_sync.handler.logger") as mock_logger,
+            patch("asken_myfitnesspal_sync.handler.logger") as mock_logger,
         ):
             response = lambda_handler({}, MagicMock())
 
@@ -92,14 +92,14 @@ class TestLambdaHandler:
         mock_result = {"registered": 2, "skipped": 1, "errors": 0}
         with (
             patch(
-                "src.asken_myfitnesspal_sync.handler.get_target_date",
+                "asken_myfitnesspal_sync.handler.get_target_date",
                 return_value=date(2024, 3, 15),
             ),
             patch(
-                "src.asken_myfitnesspal_sync.handler.run_sync",
+                "asken_myfitnesspal_sync.handler.run_sync",
                 return_value=mock_result,
             ),
-            patch("src.asken_myfitnesspal_sync.handler.logger") as mock_logger,
+            patch("asken_myfitnesspal_sync.handler.logger") as mock_logger,
         ):
             lambda_handler({}, MagicMock())
 
@@ -112,10 +112,10 @@ class TestLambdaHandler:
         env_without_secret = {k: v for k, v in os.environ.items() if k != "SECRET_NAME"}
         with (
             patch(
-                "src.asken_myfitnesspal_sync.handler.get_target_date",
+                "asken_myfitnesspal_sync.handler.get_target_date",
                 return_value=date(2024, 3, 15),
             ),
-            patch("src.asken_myfitnesspal_sync.handler.run_sync", mock_run_sync),
+            patch("asken_myfitnesspal_sync.handler.run_sync", mock_run_sync),
             patch.dict(os.environ, env_without_secret, clear=True),
         ):
             lambda_handler({}, MagicMock())
