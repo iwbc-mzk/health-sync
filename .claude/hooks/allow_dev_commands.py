@@ -155,7 +155,9 @@ try:
     if not sub_commands:
         sys.exit(0)
 
-    if all(not is_dangerous(cmd) and is_allowed(cmd, patterns) for cmd in sub_commands):
+    # &N tokens are fd redirections (e.g. 2>&1), not standalone commands — skip them
+    cmds_to_check = [cmd for cmd in sub_commands if not re.match(r'^&\d*$', cmd)]
+    if cmds_to_check and all(not is_dangerous(cmd) and is_allowed(cmd, patterns) for cmd in cmds_to_check):
         print('{"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow"}}')
 
 except ValueError:
