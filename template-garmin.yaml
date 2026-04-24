@@ -100,15 +100,28 @@ Resources:
           Type: ScheduleV2
           Properties:
             Name: asken-garmin-sync-schedule
-            ScheduleExpression: rate(30 minutes)
+            ScheduleExpression: rate(2 hours)
             State: ENABLED
-            Description: あすけん ↔ Garmin Connect 30分間隔同期
+            Description: あすけん ↔ Garmin Connect 2時間間隔同期
             # ScheduleV2 の必須プロパティ。OFF = スケジュール時刻に正確に実行。
             FlexibleTimeWindow:
               Mode: 'OFF'
             # Scheduler レベルのリトライを無効化。
-            # Lambda 実行失敗時は次の30分スケジュールを待つ。
+            # Lambda 実行失敗時は次の2時間スケジュールを待つ。
             # MaximumEventAgeInSeconds は仕様上 60 以上が必須のため最小値を設定。
+            RetryPolicy:
+              MaximumRetryAttempts: 0
+              MaximumEventAgeInSeconds: 60
+        DailySchedule:
+          Type: ScheduleV2
+          Properties:
+            Name: asken-garmin-sync-daily-schedule
+            ScheduleExpression: cron(59 1 * * ? *)
+            ScheduleExpressionTimezone: Asia/Tokyo
+            State: ENABLED
+            Description: あすけん ↔ Garmin Connect 日次同期（01:59 JST / 25:59表記）
+            FlexibleTimeWindow:
+              Mode: 'OFF'
             RetryPolicy:
               MaximumRetryAttempts: 0
               MaximumEventAgeInSeconds: 60
