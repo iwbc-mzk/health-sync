@@ -91,7 +91,7 @@ create_or_update_secret() {
 
   # JSON を python3 で安全に構築（シェルエスケープ問題を回避）
   local secret_json
-  secret_json=$(python -c "
+  secret_json=$(python3 -c "
 import json, sys
 d = {
     'asken_email':    sys.argv[1],
