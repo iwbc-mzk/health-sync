@@ -27,7 +27,12 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:github.com)",
       "Bash(ruff check *)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "Bash(aws secretsmanager *)",
+      "Bash(bash -c *)",
+      "Bash(bash --version)",
+      "Bash(apt-get list *)",
+      "Bash(git -C /workspace diff HEAD~1 *)"
     ]
   },
   "hooks": {
