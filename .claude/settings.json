@@ -42,13 +42,16 @@
         ]
       }
     ],
-    "PostToolUse": [
+    "Stop": [
       {
-        "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
-            "command": "env LC_ALL=C bash .claude/hooks/evaluate.sh"
+            "command": "bash /workspace/.claude/hooks/evaluate-on-stop.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /workspace/.claude/hooks/log-progress.sh"
           }
         ]
       }

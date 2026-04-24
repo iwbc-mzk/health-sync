@@ -116,10 +116,10 @@ Resources:
           Type: ScheduleV2
           Properties:
             Name: asken-garmin-sync-daily-schedule
-            ScheduleExpression: cron(59 1 * * ? *)
+            ScheduleExpression: cron(55 23 * * ? *)
             ScheduleExpressionTimezone: Asia/Tokyo
             State: ENABLED
-            Description: あすけん ↔ Garmin Connect 日次同期（01:59 JST / 25:59表記）
+            Description: あすけん ↔ Garmin Connect 日次同期（23:55 JST）
             FlexibleTimeWindow:
               Mode: 'OFF'
             RetryPolicy:
