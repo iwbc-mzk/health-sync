@@ -47,23 +47,26 @@ def main() -> int:
 
     # 末尾から走査して直近ターン（最後の user エントリより後）の
     # assistant エントリ内 message.content[] に Edit / Write が含まれるか確認する
+    # セッション終了時に attachment 等のシステムエントリが末尾に付加されるため、
+    # assistant 以外は user が出るまでスキップする
     try:
         for entry in reversed(tail):
             entry_type = entry.get("type", "")
             if entry_type == "user":
                 # 直近ターンの開始より前に到達 → 改修なし
                 break
-            if entry_type == "assistant":
-                content = (entry.get("message") or {}).get("content", [])
-                if not isinstance(content, list):
-                    continue
-                for item in content:
-                    if (
-                        isinstance(item, dict)
-                        and item.get("type") == "tool_use"
-                        and item.get("name") in ("Edit", "Write")
-                    ):
-                        return 0  # 改修あり
+            if entry_type != "assistant":
+                continue
+            content = (entry.get("message") or {}).get("content", [])
+            if not isinstance(content, list):
+                continue
+            for item in content:
+                if (
+                    isinstance(item, dict)
+                    and item.get("type") == "tool_use"
+                    and item.get("name") in ("Edit", "Write")
+                ):
+                    return 0  # 改修あり
     except Exception:
         return 1
 
