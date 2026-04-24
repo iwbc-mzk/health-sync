@@ -51,6 +51,7 @@ use_container = true
 template_file = "template-mfp.yaml"
 
 [mfp.deploy.parameters]
+stack_name          = "asken-myfitnesspal-sync"
 capabilities        = "CAPABILITY_IAM"
 confirm_changeset   = true
 resolve_s3          = true

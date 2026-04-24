@@ -32,7 +32,9 @@
       "Bash(bash -c *)",
       "Bash(bash --version)",
       "Bash(apt-get list *)",
-      "Bash(git -C /workspace diff HEAD~1 *)"
+      "Bash(git -C /workspace diff HEAD~1 *)",
+      "Bash(aws cloudformation *)",
+      "Bash(sam validate *)"
     ]
   },
   "hooks": {

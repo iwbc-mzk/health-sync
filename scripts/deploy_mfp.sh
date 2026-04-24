@@ -140,9 +140,9 @@ check_secret() {
 sam_build() {
   info "SAM ビルドを開始します (use_container=true, config-env=${CONFIG_ENV})..."
   sam build \
-    --config-file "${REPO_ROOT}/samconfig.toml" \
-    --config-env "$CONFIG_ENV" \
-    --template-file "$TEMPLATE_FILE" \
+    --use-container \
+    --cached \
+    --parallel \
     --profile "$PROFILE" \
     --region "$REGION"
   success "SAM ビルド完了"
@@ -154,26 +154,17 @@ sam_deploy() {
     info "SAM 対話形式デプロイを開始します..."
     sam deploy \
       --guided \
-      --config-file "${REPO_ROOT}/samconfig.toml" \
-      --config-env "$CONFIG_ENV" \
-      --template-file "$TEMPLATE_FILE" \
-      --stack-name "$STACK_NAME" \
       --profile "$PROFILE" \
       --region "$REGION" \
-      --capabilities CAPABILITY_IAM \
       --parameter-overrides "SecretName=${SECRET_NAME}"
   else
-    info "SAM デプロイを開始します (チェンジセットプレビューをスキップ)..."
-    # --no-confirm-changeset で samconfig.toml の confirm_changeset=true を上書き。
+    info "SAM デプロイを開始します (チェンジセットプレビュー中)..."
+    # --no-confirm-changeset でプレビューのみ表示し、スクリプト側で実行可否を確認する。
+    # samconfig.toml の confirm_changeset = true はここでは使用しない。
     sam deploy \
       --no-confirm-changeset \
-      --config-file "${REPO_ROOT}/samconfig.toml" \
-      --config-env "$CONFIG_ENV" \
-      --template-file "$TEMPLATE_FILE" \
-      --stack-name "$STACK_NAME" \
       --profile "$PROFILE" \
       --region "$REGION" \
-      --capabilities CAPABILITY_IAM \
       --parameter-overrides "SecretName=${SECRET_NAME}"
   fi
   success "SAM デプロイ完了"

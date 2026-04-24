@@ -2,129 +2,140 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
   asken-myfitnesspal-sync
-  あすけん → MyFitnessPal 食事データ同期 Lambda
+  Sync meal data from Asken to MyFitnessPal via Lambda
 
-# ─── グローバル設定 ──────────────────────────────────────────────────────────
+# --- Global settings ---
 Globals:
   Function:
     Runtime: python3.12
-    # Timeout の根拠（現実的な最悪ケース想定）:
-    #   あすけんログイン: GET 30s + POST 30s = 60s
-    #   MFP ログイン: 30s
-    #   食事区分ごとの取得・登録（4区分 × 最大3回リトライ）: 93s × 4 = 372s
-    #   実用上の主要ボトルネックは少数操作のため 300s で十分。
+    # Timeout based on worst-case estimates:
+    #   Asken login: GET 30s + POST 30s = 60s
+    #   MFP login: 30s
+    #   Fetch/register per meal category (4 categories x max 3 retries): 93s x 4 = 372s
+    #   In practice, 300s is sufficient for the main bottlenecks.
     Timeout: 300
-    MemorySize: 256      # requests + BeautifulSoup + lxml のメモリ使用量を考慮
+    MemorySize: 256      # Accounts for memory usage of requests + BeautifulSoup + lxml
     Environment:
       Variables:
         SECRET_NAME: !Ref SecretName
 
-# ─── パラメータ ──────────────────────────────────────────────────────────────
+# --- Parameters ---
 Parameters:
   SecretName:
     Type: String
     Default: asken-myfitnesspal-sync
-    # IAM リソース ARN に直接埋め込まれるため、使用可能文字を英数字・記号に制限する
+    # Restrict to alphanumeric and symbols since this is embedded directly in IAM resource ARNs
     AllowedPattern: '^[a-zA-Z0-9/_+=.@-]+$'
     ConstraintDescription: >
-      英数字および /_+=.@- のみ使用可能です（スペース・特殊文字不可）。
+      Only alphanumeric characters and /_+=.@- are allowed (no spaces or special characters).
     Description: >
-      AWS Secrets Manager のシークレット名。
+      AWS Secrets Manager secret name.
+      The secret must be a JSON object containing the keys:
       asken_email / asken_password / myfitnesspal_email / myfitnesspal_password
-      キーを含む JSON シークレットを事前に作成すること。
 
-# ─── リソース ────────────────────────────────────────────────────────────────
+# --- Resources ---
 Resources:
 
-  # CloudWatch ロググループ（保持期間 30 日）
-  # SyncFunction より先に定義し、DependsOn で先行作成を保証することで
-  # Lambda 側のロググループ自動作成より先に保持期間 30 日設定済みのロググループが
-  # 存在する状態にする。
-  # ⚠️ LogGroupName は SyncFunction.Properties.FunctionName と必ず一致させること。
-  #   どちらかを変更した場合はもう一方も必ず更新する（2箇所の値を同期させる）。
+  # EventBridge Scheduler schedule group
+  # Explicitly created so that EarlyValidation::ResourceExistenceCheck can verify
+  # the group exists before the schedules are created. Without this, the check
+  # on the implicit "default" group can fail during new-stack creation.
+  SyncScheduleGroup:
+    Type: AWS::Scheduler::ScheduleGroup
+    Properties:
+      Name: asken-myfitnesspal-sync
+
+  # CloudWatch log group (retention: 30 days)
+  # Defined before SyncFunction and referenced via DependsOn to ensure the log group
+  # with 30-day retention exists before Lambda auto-creates one.
+  # WARNING: LogGroupName must always match SyncFunction.Properties.FunctionName.
+  #          Update both locations together when either is changed.
   SyncFunctionLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: /aws/lambda/asken-myfitnesspal-sync
       RetentionInDays: 30
 
-  # Lambda 関数
+  # Lambda function
   SyncFunction:
     Type: AWS::Serverless::Function
-    # SyncFunctionLogGroup を先に作成することで Lambda のロググループ自動作成より
-    # 先に保持期間 30 日設定済みのロググループが存在する状態にする。
+    # DependsOn ensures the log group with 30-day retention is created
+    # before Lambda auto-creates its own log group.
     DependsOn: SyncFunctionLogGroup
     Metadata:
       BuildProperties:
-        # garminconnect を含まない MFP 専用の requirements ファイルを使用する。
-        # ⚠️ RequirementsFile は SAM CLI >= 1.111.0 が必要。
+        # Use the MFP-specific requirements file (excludes garminconnect).
+        # WARNING: RequirementsFile requires SAM CLI >= 1.111.0.
         RequirementsFile: requirements_mfp.txt
     Properties:
       FunctionName: asken-myfitnesspal-sync
-      # src/ レイアウトのため CodeUri を src に設定する。
-      # SAM は src/requirements_mfp.txt を参照して依存パッケージをインストールし、
-      # src/asken_myfitnesspal_sync/ を /var/task/asken_myfitnesspal_sync/ として配置する。
+      # CodeUri set to src/ for src/ layout.
+      # SAM installs dependencies from src/requirements_mfp.txt and places
+      # src/asken_myfitnesspal_sync/ at /var/task/asken_myfitnesspal_sync/.
       CodeUri: src/
       Handler: asken_myfitnesspal_sync.handler.lambda_handler
-      Description: あすけん → MyFitnessPal 食事データ同期
+      Description: Sync meal data from Asken to MyFitnessPal
 
-      # 同時実行数を 1 に制限（重複実行防止）
+      # Limit concurrency to 1 to prevent duplicate executions
       ReservedConcurrentExecutions: 1
 
       Policies:
-        # Lambda 基本実行ロール（CloudWatch Logs への書き込み）
+        # Basic Lambda execution role (write to CloudWatch Logs)
         - AWSLambdaBasicExecutionRole
-        # Secrets Manager アクセス（認証情報の読み取りのみ）
+        # Secrets Manager access (read-only)
         - Statement:
             - Sid: SecretsManagerReadOnly
               Effect: Allow
               Action:
-                - secretsmanager:GetSecretValue    # 認証情報の読み取り
-              # Secrets Manager は ARN 末尾に 6 文字のランダムサフィックスを付与する
+                - secretsmanager:GetSecretValue    # Read credentials
+              # Secrets Manager appends a 6-character random suffix to ARNs
               Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretName}-*'
 
       Events:
-        # 毎時 0 分に実行（JST・UTC 共通: 毎時 0 分）
+        # Run at minute 0 of every hour (JST/UTC: every hour at :00)
         HourlySchedule:
           Type: ScheduleV2
           Properties:
             Name: asken-myfitnesspal-sync-hourly
             ScheduleExpression: 'cron(0 * * * ? *)'
             State: ENABLED
-            Description: あすけん → MyFitnessPal 毎時同期
+            Description: Asken to MyFitnessPal hourly sync
+            GroupName: !Ref SyncScheduleGroup
             FlexibleTimeWindow:
               Mode: 'OFF'
-            # Scheduler レベルのリトライを無効化。
-            # Lambda 実行失敗時は次のスケジュールを待つ。
-            # MaximumEventAgeInSeconds は仕様上 60 以上が必須のため最小値を設定。
+            # Disable scheduler-level retries.
+            # On Lambda failure, wait for the next scheduled execution.
+            # MaximumEventAgeInSeconds minimum is 60 per spec.
             RetryPolicy:
               MaximumRetryAttempts: 0
               MaximumEventAgeInSeconds: 60
 
-        # 毎日 23:59 JST（= 14:59 UTC）に実行
+        # Run daily at 23:59 JST (= 14:59 UTC)
         DailySchedule:
           Type: ScheduleV2
           Properties:
             Name: asken-myfitnesspal-sync-daily
             ScheduleExpression: 'cron(59 14 * * ? *)'
+            ScheduleExpressionTimezone: Asia/Tokyo
             State: ENABLED
-            Description: あすけん → MyFitnessPal 毎日 23:59 JST 同期
+            Description: Asken to MyFitnessPal daily sync at 23:59 JST
+            GroupName: !Ref SyncScheduleGroup
             FlexibleTimeWindow:
               Mode: 'OFF'
             RetryPolicy:
               MaximumRetryAttempts: 0
               MaximumEventAgeInSeconds: 60
 
-# ─── 出力 ────────────────────────────────────────────────────────────────────
+# --- Outputs ---
 Outputs:
   SyncFunctionArn:
-    Description: 同期 Lambda 関数の ARN
+    Description: ARN of the sync Lambda function
     Value: !GetAtt SyncFunction.Arn
 
   SyncFunctionName:
-    Description: 同期 Lambda 関数名
+    Description: Name of the sync Lambda function
     Value: !Ref SyncFunction
 
   LogGroupName:
-    Description: CloudWatch ロググループ名
+    Description: CloudWatch log group name
     Value: !Ref SyncFunctionLogGroup
