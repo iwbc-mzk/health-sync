@@ -23,7 +23,7 @@ Globals:
 Parameters:
   SecretName:
     Type: String
-    Default: asken-myfitnesspal-sync/credentials
+    Default: asken-myfitnesspal-sync
     # IAM リソース ARN に直接埋め込まれるため、使用可能文字を英数字・記号に制限する
     AllowedPattern: '^[a-zA-Z0-9/_+=.@-]+$'
     ConstraintDescription: >

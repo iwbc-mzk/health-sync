@@ -7,7 +7,7 @@
 - **言語**: Python
 - **実行環境**: AWS Lambda（asken-garmin-sync とは別の独立した Lambda 関数）
 - **連携頻度**: 1時間ごと + 毎日 23:59（EventBridge Scheduler）
-- **認証情報管理**: AWS Secrets Manager（シークレット名: `asken-myfitnesspal-sync/credentials`）
+- **認証情報管理**: AWS Secrets Manager（シークレット名: `asken-myfitnesspal-sync`）
 
 ## 連携仕様
 
@@ -59,7 +59,7 @@
 
 ## 認証情報（Secrets Manager）
 
-シークレット名: `asken-myfitnesspal-sync/credentials`
+シークレット名: `asken-myfitnesspal-sync`
 
 ```json
 {
@@ -90,7 +90,7 @@ asken-garmin-sync と同一の方針に従う:
 - 個別操作エラー（食事区分単位）は `WARNING` ログに記録し、Lambda は成功として継続する
 - Scheduler レベルのリトライは無効（`MaximumRetryAttempts: 0`）
 - 環境変数:
-  - `SECRET_NAME`: Secrets Manager シークレット名（省略時: `asken-myfitnesspal-sync/credentials`）
+  - `SECRET_NAME`: Secrets Manager シークレット名（省略時: `asken-myfitnesspal-sync`）
   - `TARGET_DATE`: 同期対象日（省略時: JST 当日）
 
 ## モジュール構成（参考）

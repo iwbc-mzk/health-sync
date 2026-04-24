@@ -7,7 +7,7 @@
 # オプション:
 #   -r, --region    AWSリージョン (デフォルト: ap-northeast-1)
 #   -p, --profile   AWS CLIプロファイル (デフォルト: default)
-#   -s, --secret    シークレット名 (デフォルト: asken-myfitnesspal-sync/credentials)
+#   -s, --secret    シークレット名 (デフォルト: asken-myfitnesspal-sync)
 #   -h, --help      ヘルプを表示
 #
 # 説明:
@@ -20,7 +20,7 @@ set -euo pipefail
 # ─── デフォルト値 ─────────────────────────────────────────────────────────────
 REGION="ap-northeast-1"
 PROFILE="default"
-SECRET_NAME="asken-myfitnesspal-sync/credentials"
+SECRET_NAME="asken-myfitnesspal-sync"
 
 # ─── カラー出力 ───────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -89,52 +89,68 @@ read_credentials() {
 create_or_update_secret() {
   info "シークレット内容を構築しています..."
 
-  # 一時ファイルに JSON を書き込む。パスワードをプロセス引数に乗せないために
-  # python3 には環境変数経由で渡し、aws CLI には file:// 経由で渡す。
-  local tmp_file
-  tmp_file=$(mktemp)
-  # ダブルクォートで即時展開することで、EXIT 発火時に $tmp_file がスコープ外になっても
-  # ファイルパスが確実に削除される（シングルクォートだと -u フラグで unbound variable エラー）。
-  trap "rm -f '${tmp_file}'" EXIT
-
-  ASKEN_EMAIL="$ASKEN_EMAIL" \
-  ASKEN_PASSWORD="$ASKEN_PASSWORD" \
-  MFP_EMAIL="$MFP_EMAIL" \
-  MFP_PASSWORD="$MFP_PASSWORD" \
-  python3 -c "
+  local secret_json
+  secret_json=$(ASKEN_EMAIL="$ASKEN_EMAIL" \
+    ASKEN_PASSWORD="$ASKEN_PASSWORD" \
+    MFP_EMAIL="$MFP_EMAIL" \
+    MFP_PASSWORD="$MFP_PASSWORD" \
+    python3 -c '
 import json, os
-d = {
-    'asken_email':           os.environ['ASKEN_EMAIL'],
-    'asken_password':        os.environ['ASKEN_PASSWORD'],
-    'myfitnesspal_email':    os.environ['MFP_EMAIL'],
-    'myfitnesspal_password': os.environ['MFP_PASSWORD'],
-}
-print(json.dumps(d))
-" > "$tmp_file"
+print(json.dumps({
+    "asken_email":           os.environ["ASKEN_EMAIL"],
+    "asken_password":        os.environ["ASKEN_PASSWORD"],
+    "myfitnesspal_email":    os.environ["MFP_EMAIL"],
+    "myfitnesspal_password": os.environ["MFP_PASSWORD"],
+}))
+')
 
   # 既存シークレット確認
+  local secret_exists=false
+  local deletion_date="None"
   if aws secretsmanager describe-secret \
       --secret-id "$SECRET_NAME" \
       --profile "$PROFILE" \
       --region "$REGION" &>/dev/null; then
+    secret_exists=true
+    if ! deletion_date=$(aws secretsmanager describe-secret \
+        --secret-id "$SECRET_NAME" \
+        --profile "$PROFILE" \
+        --region "$REGION" \
+        --query DeletedDate \
+        --output text); then
+      error "シークレットの削除状態の確認中にエラーが発生しました。"
+      exit 1
+    fi
+  fi
+
+  if [[ "$secret_exists" == true ]]; then
+    # 削除予定状態の場合は復元してから更新する
+    if [[ -n "$deletion_date" && "$deletion_date" != "None" ]]; then
+      warn "シークレット '${SECRET_NAME}' は削除予定状態です。復元します。"
+      aws secretsmanager restore-secret \
+        --secret-id "$SECRET_NAME" \
+        --profile "$PROFILE" \
+        --region "$REGION" >/dev/null
+      success "シークレットを復元しました。"
+    fi
 
     warn "既存のシークレット '${SECRET_NAME}' が見つかりました。値を更新します。"
     aws secretsmanager put-secret-value \
       --secret-id "$SECRET_NAME" \
-      --secret-string "file://${tmp_file}" \
+      --secret-string "$secret_json" \
       --profile "$PROFILE" \
       --region "$REGION" \
-      --output text &>/dev/null
+      --output text >/dev/null
     success "シークレット '${SECRET_NAME}' を更新しました。"
   else
     info "新規シークレット '${SECRET_NAME}' を作成します..."
     aws secretsmanager create-secret \
       --name "$SECRET_NAME" \
       --description "asken-myfitnesspal-sync 認証情報" \
-      --secret-string "file://${tmp_file}" \
+      --secret-string "$secret_json" \
       --profile "$PROFILE" \
       --region "$REGION" \
-      --output text &>/dev/null
+      --output text >/dev/null
     success "シークレット '${SECRET_NAME}' を作成しました。"
   fi
 

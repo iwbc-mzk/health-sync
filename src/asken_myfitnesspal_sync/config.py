@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_SECRET_NAME = "asken-myfitnesspal-sync/credentials"
+_DEFAULT_SECRET_NAME = "asken-myfitnesspal-sync"
 _JST = ZoneInfo("Asia/Tokyo")
 
 # boto3 クライアントの遅延初期化（モジュールレベル変数、ウォームスタート最適化）

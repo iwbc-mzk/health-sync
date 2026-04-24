@@ -201,7 +201,7 @@ aws scheduler get-schedule --name asken-myfitnesspal-sync-daily  --region ap-nor
 | `SECRET_NAME` | ○ | Secrets Manager のシークレット名 (SAM テンプレートで自動設定) |
 | `TARGET_DATE` | - | 対象日 (YYYY-MM-DD形式、省略時はJST当日) |
 
-**Secrets Manager シークレット** (シークレット名: `asken-myfitnesspal-sync/credentials`)
+**Secrets Manager シークレット** (シークレット名: `asken-myfitnesspal-sync`)
 
 ```json
 {

@@ -7,7 +7,7 @@
 # オプション:
 #   -r, --region    AWSリージョン (デフォルト: ap-northeast-1)
 #   -p, --profile   AWS CLIプロファイル (デフォルト: default)
-#   -s, --secret    Secrets Managerのシークレット名 (デフォルト: asken-myfitnesspal-sync/credentials)
+#   -s, --secret    Secrets Managerのシークレット名 (デフォルト: asken-myfitnesspal-sync)
 #   -g, --guided    sam deploy --guided で対話形式デプロイ
 #   -h, --help      ヘルプを表示
 
@@ -20,7 +20,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # ─── デフォルト値 ─────────────────────────────────────────────────────────────
 REGION="ap-northeast-1"
 PROFILE="default"
-SECRET_NAME="asken-myfitnesspal-sync/credentials"
+SECRET_NAME="asken-myfitnesspal-sync"
 GUIDED=false
 STACK_NAME="asken-myfitnesspal-sync"
 TEMPLATE_FILE="${REPO_ROOT}/template-mfp.yaml"

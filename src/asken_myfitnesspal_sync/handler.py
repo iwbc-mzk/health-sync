@@ -1,7 +1,7 @@
 """AWS Lambda ハンドラー - あすけん → MyFitnessPal 同期エントリーポイント.
 
 環境変数:
-    SECRET_NAME: Secrets Manager のシークレット名（省略時: "asken-myfitnesspal-sync/credentials"）
+    SECRET_NAME: Secrets Manager のシークレット名（省略時: "asken-myfitnesspal-sync"）
     TARGET_DATE: 同期対象日（YYYY-MM-DD 形式、省略時: JST 基準の当日）
 """
 from __future__ import annotations

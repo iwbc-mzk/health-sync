@@ -77,7 +77,7 @@ class TestGetCredentials:
     def test_uses_default_secret_name_when_not_specified(self, sm_client, monkeypatch):
         monkeypatch.setenv("SECRET_NAME", "")
         sm_client.create_secret(
-            Name="asken-myfitnesspal-sync/credentials",
+            Name="asken-myfitnesspal-sync",
             SecretString=json.dumps(_VALID_SECRET),
         )
         get_credentials()

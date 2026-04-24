@@ -42,10 +42,10 @@
 ## Phase 3: 設定・シークレット管理
 
 - [x] 3.1 `config.py` - AWS Secrets Manager からの認証情報取得
-  - シークレット名: `asken-myfitnesspal-sync/credentials`
+  - シークレット名: `asken-myfitnesspal-sync`
   - 構造: `asken_email`, `asken_password`, `myfitnesspal_email`, `myfitnesspal_password`
 - [x] 3.2 環境変数定義
-  - `SECRET_NAME`（省略時: `asken-myfitnesspal-sync/credentials`）
+  - `SECRET_NAME`（省略時: `asken-myfitnesspal-sync`）
   - `TARGET_DATE`（YYYY-MM-DD、省略時: JST 当日）
 
 ## Phase 4: あすけんクライアント

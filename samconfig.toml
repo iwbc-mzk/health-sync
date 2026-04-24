@@ -56,5 +56,5 @@ confirm_changeset   = true
 resolve_s3          = true
 s3_prefix           = "asken-myfitnesspal-sync"
 profile             = "default"
-parameter_overrides = "SecretName=\"asken-myfitnesspal-sync/credentials\""
+parameter_overrides = "SecretName=\"asken-myfitnesspal-sync\""
 image_repositories  = []
