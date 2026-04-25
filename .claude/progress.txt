@@ -123,3 +123,19 @@ SAM は CodeUri ディレクトリ直下の `requirements.txt`（固定名）の
 - `BuildMethod: makefile` は `Metadata` の直下に記述すること（`Metadata.BuildProperties.BuildMethod` は誤り）
 - Makefile のレシピ行はタブ文字（スペース不可）
 - deploy スクリプト経由でのみビルド可（直接 `sam build` すると utils/ が CodeUri にないため Makefile がエラー）
+
+---
+
+## 2026-04-25 — MFP 食事エントリ登録を quick_add に変更
+
+### 問題
+`POST https://api.myfitnesspal.com/v2/foods`（カスタム食品作成）が HTTP 400 `"No items object key was found"` で失敗していた。
+
+### 変更内容
+- `_create_custom_food` メソッドと `_CUSTOM_FOOD_PREFIX` 定数を削除
+- `add_meal_entry` を二段階（食品作成 → 日記登録）から一段階クイックツールに変更
+  - エンドポイント: `POST https://www.myfitnesspal.com/api/services/diary`
+  - ペイロード: `{"items": [{"type": "quick_add", "meal_name": "Breakfast", "date": "...", "nutritional_contents": {"energy": {"value": "N", "unit": "calories"}, "protein": N, "fat": N, "carbohydrates": N}}]}`
+  - `meal_name` は `nutrition.meal_type.value` を直接使用（MealType.value = "Breakfast"/"Lunch"/"Dinner"/"Snacks"）
+- `_get_diary_items` から `types=food_entry` パラメータを削除（quick_add エントリも GET で取得できるよう）
+- テストを新フローに合わせて全面更新（43テスト、全 PASS）

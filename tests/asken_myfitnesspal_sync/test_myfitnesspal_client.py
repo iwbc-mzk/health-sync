@@ -22,7 +22,7 @@ from asken_myfitnesspal_sync.myfitnesspal_client import (
 
 _AUTH_TOKEN_URL = f"{_BASE_URL}/user/auth_token"
 _DIARY_URL = f"{_API_URL}/v2/diary"
-_FOODS_URL = f"{_API_URL}/v2/foods"
+_QUICK_ADD_URL = f"{_BASE_URL}/api/services/diary"
 
 TARGET_DATE = date(2026, 4, 19)
 
@@ -48,10 +48,11 @@ def _build_diary_item(
     protein: float,
     fat: float,
     carbs: float,
+    entry_type: str = "food_entry",
 ) -> dict[str, Any]:
     return {
         "id": entry_id,
-        "type": "food_entry",
+        "type": entry_type,
         "meal_position": meal_position,
         "nutritional_contents": {
             "energy": {"unit": "calories", "value": calories},
@@ -292,6 +293,30 @@ class TestGetMealEntries:
         assert result[0].fat_g == 4.0
         assert result[0].carbs_g == 20.0
 
+    @responses_lib.activate
+    def test_get_meal_entries_includes_quick_add_entries(self) -> None:
+        """quick_add タイプのエントリも meal_position でフィルタされること."""
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
+
+        items = [
+            _build_diary_item(
+                "q1", meal_position=0, calories=300, protein=15, fat=8, carbs=40, entry_type="quick_add"
+            ),
+            _build_diary_item(
+                "f1", meal_position=0, calories=200, protein=10, fat=5, carbs=25, entry_type="food_entry"
+            ),
+            _build_diary_item(
+                "q2", meal_position=1, calories=500, protein=25, fat=12, carbs=60, entry_type="quick_add"
+            ),
+        ]
+        responses_lib.add(responses_lib.GET, _DIARY_URL, json={"items": items}, status=200)
+
+        result = client.get_meal_entries(TARGET_DATE, MealType.BREAKFAST)
+        assert len(result) == 2
+        assert result[0].calories == 300.0
+        assert result[1].calories == 200.0
+
 
 class TestAddMealEntry:
     def _nutrition(self, meal_type: MealType = MealType.BREAKFAST) -> MealNutrition:
@@ -300,187 +325,139 @@ class TestAddMealEntry:
         )
 
     @responses_lib.activate
-    def test_add_meal_entry_success(self) -> None:
+    def test_add_meal_entry_success_201(self) -> None:
         _add_auth_mocks()
         client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
-        responses_lib.add(
-            responses_lib.POST,
-            _FOODS_URL,
-            json={"item": {"id": "food123", "version": "v1"}},
-            status=201,
-        )
-        responses_lib.add(responses_lib.POST, _DIARY_URL, json={}, status=201)
-
+        responses_lib.add(responses_lib.POST, _QUICK_ADD_URL, json={}, status=201)
         client.add_meal_entry(TARGET_DATE, self._nutrition())
 
     @responses_lib.activate
-    def test_add_meal_entry_diary_200_also_succeeds(self) -> None:
+    def test_add_meal_entry_success_200(self) -> None:
         _add_auth_mocks()
         client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
-        responses_lib.add(
-            responses_lib.POST,
-            _FOODS_URL,
-            json={"item": {"id": "food456", "version": ""}},
-            status=200,
-        )
-        responses_lib.add(responses_lib.POST, _DIARY_URL, json={}, status=200)
-
+        responses_lib.add(responses_lib.POST, _QUICK_ADD_URL, json={}, status=200)
         client.add_meal_entry(TARGET_DATE, self._nutrition(MealType.LUNCH))
 
     @responses_lib.activate
-    def test_add_meal_entry_food_creation_401_raises_auth_error(self) -> None:
+    def test_add_meal_entry_401_raises_auth_error(self) -> None:
         _add_auth_mocks()
         client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
-        responses_lib.add(responses_lib.POST, _FOODS_URL, status=401)
+        responses_lib.add(responses_lib.POST, _QUICK_ADD_URL, status=401)
         with pytest.raises(MfpAuthError):
             client.add_meal_entry(TARGET_DATE, self._nutrition())
 
     @responses_lib.activate
-    def test_add_meal_entry_food_creation_non_json_raises_mfp_error(self) -> None:
+    def test_add_meal_entry_5xx_raises_mfp_error(self, mock_mfp_sleep) -> None:
         _add_auth_mocks()
         client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
-        responses_lib.add(
-            responses_lib.POST,
-            _FOODS_URL,
-            body="<html>Error</html>",
-            status=200,
-        )
-        with pytest.raises(MfpError, match="JSON パース"):
-            client.add_meal_entry(TARGET_DATE, self._nutrition())
-
-    @responses_lib.activate
-    def test_add_meal_entry_food_item_null_raises_mfp_error(self) -> None:
-        """{"item": null} レスポンス時に MfpError を送出すること."""
-        _add_auth_mocks()
-        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
-
-        responses_lib.add(
-            responses_lib.POST,
-            _FOODS_URL,
-            json={"item": None},
-            status=201,
-        )
-        with pytest.raises(MfpError, match="id が含まれていません"):
-            client.add_meal_entry(TARGET_DATE, self._nutrition())
-
-    @responses_lib.activate
-    def test_add_meal_entry_food_creation_missing_id_raises_mfp_error(self) -> None:
-        _add_auth_mocks()
-        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
-
-        responses_lib.add(
-            responses_lib.POST,
-            _FOODS_URL,
-            json={"item": {}},
-            status=201,
-        )
-        with pytest.raises(MfpError, match="id が含まれていません"):
-            client.add_meal_entry(TARGET_DATE, self._nutrition())
-
-    @responses_lib.activate
-    def test_add_meal_entry_food_creation_5xx_raises_mfp_error(self, mock_mfp_sleep) -> None:
-        _add_auth_mocks()
-        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
-
-        responses_lib.add(responses_lib.POST, _FOODS_URL, status=500, body="Internal Error")
-        with pytest.raises(MfpError, match="HTTP 500"):
-            client.add_meal_entry(TARGET_DATE, self._nutrition())
-        assert mock_mfp_sleep.call_count == 3
-
-    @responses_lib.activate
-    def test_add_meal_entry_diary_401_raises_auth_error(self) -> None:
-        _add_auth_mocks()
-        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
-
-        responses_lib.add(
-            responses_lib.POST,
-            _FOODS_URL,
-            json={"item": {"id": "food789", "version": "v2"}},
-            status=201,
-        )
-        responses_lib.add(responses_lib.POST, _DIARY_URL, status=401)
-
-        with pytest.raises(MfpAuthError):
-            client.add_meal_entry(TARGET_DATE, self._nutrition())
-
-    @responses_lib.activate
-    def test_add_meal_entry_diary_5xx_raises_mfp_error(self, mock_mfp_sleep) -> None:
-        _add_auth_mocks()
-        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
-
-        responses_lib.add(
-            responses_lib.POST,
-            _FOODS_URL,
-            json={"item": {"id": "foodabc", "version": ""}},
-            status=201,
-        )
-        responses_lib.add(responses_lib.POST, _DIARY_URL, status=503, body="Service Unavailable")
-
+        responses_lib.add(responses_lib.POST, _QUICK_ADD_URL, status=503, body="Service Unavailable")
         with pytest.raises(MfpError, match="HTTP 503"):
             client.add_meal_entry(TARGET_DATE, self._nutrition())
         assert mock_mfp_sleep.call_count == 3
 
     @responses_lib.activate
-    def test_add_meal_entry_food_creation_network_error_raises_mfp_error(self) -> None:
+    def test_add_meal_entry_non_ok_raises_mfp_error(self) -> None:
+        """400 等のリトライ対象外エラーは即座に MfpError を送出すること."""
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
+
+        responses_lib.add(responses_lib.POST, _QUICK_ADD_URL, status=400, body='{"error":"bad_request"}')
+        with pytest.raises(MfpError, match="HTTP 400"):
+            client.add_meal_entry(TARGET_DATE, self._nutrition())
+
+    @responses_lib.activate
+    def test_add_meal_entry_network_error_raises_mfp_error(self) -> None:
         _add_auth_mocks()
         client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(
             responses_lib.POST,
-            _FOODS_URL,
+            _QUICK_ADD_URL,
             body=requests.exceptions.ConnectionError("Network down"),
         )
         with pytest.raises(MfpError, match="MFP リクエストが"):
             client.add_meal_entry(TARGET_DATE, self._nutrition())
 
     @responses_lib.activate
-    def test_add_meal_entry_diary_network_error_raises_mfp_error(self) -> None:
+    def test_add_meal_entry_maps_meal_name_correctly(self) -> None:
+        """食事区分が正しい meal_name にマッピングされることを確認."""
         _add_auth_mocks()
         client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
-        responses_lib.add(
-            responses_lib.POST,
-            _FOODS_URL,
-            json={"item": {"id": "foodNet", "version": ""}},
-            status=201,
-        )
-        responses_lib.add(
-            responses_lib.POST,
-            _DIARY_URL,
-            body=requests.exceptions.Timeout("Timeout"),
-        )
-        with pytest.raises(MfpError, match="MFP リクエストが"):
-            client.add_meal_entry(TARGET_DATE, self._nutrition())
-
-    @responses_lib.activate
-    def test_add_meal_entry_maps_meal_position_correctly(self) -> None:
-        """食事区分が正しい meal_position にマッピングされることを確認."""
-        _add_auth_mocks()
-        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
-
-        responses_lib.add(
-            responses_lib.POST,
-            _FOODS_URL,
-            json={"item": {"id": "foodXYZ", "version": ""}},
-            status=201,
-        )
         posted_body: list[dict[str, Any]] = []
 
         def _capture(request):  # type: ignore[no-untyped-def]
             posted_body.append(json.loads(request.body))
             return 201, {}, "{}"
 
-        responses_lib.add_callback(responses_lib.POST, _DIARY_URL, callback=_capture)
+        responses_lib.add_callback(responses_lib.POST, _QUICK_ADD_URL, callback=_capture)
 
         client.add_meal_entry(
             TARGET_DATE,
             MealNutrition(meal_type=MealType.DINNER, calories=700, protein_g=35, fat_g=20, carbs_g=80),
         )
-        assert posted_body[0]["items"][0]["meal_position"] == 2  # DINNER = 2
+        item = posted_body[0]["items"][0]
+        assert item["meal_name"] == "Dinner"
+        assert item["type"] == "quick_add"
+        assert item["date"] == TARGET_DATE.isoformat()
+
+    @responses_lib.activate
+    def test_add_meal_entry_payload_structure(self) -> None:
+        """クイックツールのペイロードに必要なフィールドがすべて含まれることを確認."""
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
+
+        posted_body: list[dict[str, Any]] = []
+
+        def _capture(request):  # type: ignore[no-untyped-def]
+            posted_body.append(json.loads(request.body))
+            return 201, {}, "{}"
+
+        responses_lib.add_callback(responses_lib.POST, _QUICK_ADD_URL, callback=_capture)
+
+        client.add_meal_entry(
+            TARGET_DATE,
+            MealNutrition(meal_type=MealType.BREAKFAST, calories=500, protein_g=25, fat_g=12, carbs_g=60),
+        )
+        item = posted_body[0]["items"][0]
+        nc = item["nutritional_contents"]
+        assert nc["energy"]["value"] == "500"
+        assert nc["energy"]["unit"] == "calories"
+        assert nc["protein"] == 25.0
+        assert nc["fat"] == 12.0
+        assert nc["carbohydrates"] == 60.0
+
+    @responses_lib.activate
+    def test_add_meal_entry_all_meal_names(self) -> None:
+        """全食事区分が正しい meal_name にマッピングされることを確認."""
+        expected = {
+            MealType.BREAKFAST: "Breakfast",
+            MealType.LUNCH: "Lunch",
+            MealType.DINNER: "Dinner",
+            MealType.SNACKS: "Snacks",
+        }
+        for meal_type, expected_name in expected.items():
+            responses_lib.reset()
+            _add_auth_mocks()
+            client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
+
+            posted_body: list[dict[str, Any]] = []
+
+            def _capture(request, _expected=expected_name):  # type: ignore[no-untyped-def]
+                posted_body.append(json.loads(request.body))
+                return 201, {}, "{}"
+
+            responses_lib.add_callback(responses_lib.POST, _QUICK_ADD_URL, callback=_capture)
+
+            client.add_meal_entry(
+                TARGET_DATE,
+                MealNutrition(meal_type=meal_type, calories=100, protein_g=5, fat_g=2, carbs_g=10),
+            )
+            assert posted_body[0]["items"][0]["meal_name"] == expected_name
 
 
 class TestDeleteMealEntries:
@@ -559,6 +536,26 @@ class TestDeleteMealEntries:
         with pytest.raises(MfpError, match="HTTP 500"):
             client.delete_meal_entries(TARGET_DATE, MealType.SNACKS)
         assert mock_mfp_sleep.call_count == 3
+
+    @responses_lib.activate
+    def test_delete_meal_entries_quick_add_entries_deleted(self) -> None:
+        """quick_add タイプのエントリも meal_position で一致すれば削除されること."""
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
+
+        items = [
+            _build_diary_item(
+                "q1", meal_position=0, calories=300, protein=15, fat=8, carbs=40, entry_type="quick_add"
+            ),
+            _build_diary_item(
+                "f1", meal_position=1, calories=500, protein=25, fat=12, carbs=60, entry_type="food_entry"
+            ),
+        ]
+        responses_lib.add(responses_lib.GET, _DIARY_URL, json={"items": items}, status=200)
+        responses_lib.add(responses_lib.DELETE, f"{_DIARY_URL}/q1", status=204)
+
+        client.delete_meal_entries(TARGET_DATE, MealType.BREAKFAST)
+        assert len(responses_lib.calls) == 3  # auth + GET + DELETE
 
     @responses_lib.activate
     def test_delete_meal_entries_skips_items_without_id(self) -> None:
