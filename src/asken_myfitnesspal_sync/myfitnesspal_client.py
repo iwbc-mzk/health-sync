@@ -1,16 +1,12 @@
 """MyFitnessPal クライアント - セッション認証・食事エントリ操作.
 
-## 調査済み API 仕様 (Phase 5.1)
+## 調査済み API 仕様 (Phase 5.1, 更新)
 
-### 認証フロー
-1. GET  https://www.myfitnesspal.com/user/login
-   → HTML ページから `authenticity_token` (hidden input) を取得
-2. POST https://www.myfitnesspal.com/user/login
-   body: user[email], user[password], authenticity_token
-   → セッションクッキーが発行される
-3. GET  https://www.myfitnesspal.com/user/auth_token?refresh=true
+### 認証フロー (クッキーベース)
+1. Secrets Manager から取得した __Secure-next-auth.session-token を session に設定
+2. GET  https://www.myfitnesspal.com/user/auth_token?refresh=true
    → JSON: {"access_token": "...", "user_id": 12345}
-   → 認証失敗時は非 JSON レスポンス（ログインページへリダイレクト等）
+   → 認証失敗時は空レスポンスまたは非 JSON（クッキー期限切れ等）
 
 ### 食事エントリ取得 API (GET)
 GET https://api.myfitnesspal.com/v2/diary
@@ -47,8 +43,7 @@ DELETE https://api.myfitnesspal.com/v2/diary/{entry_id}
 Response: 200 or 204
 
 ### CSRF トークン
-- ログインフォームの authenticity_token のみ必要
-- API 呼び出しでは不要（Bearer トークン認証）
+- クッキーベース認証では不要（Bearer トークン認証）
 
 ### 注意事項
 - 2022年8月以降、ログインページに CAPTCHA が追加された
@@ -65,7 +60,6 @@ from datetime import date
 from typing import Any, cast
 
 import requests
-from bs4 import BeautifulSoup
 
 from .models import MealNutrition, MealType
 
@@ -171,52 +165,22 @@ def _mfp_request_with_retry(
 class MyFitnessPalClient:
     """MyFitnessPal 内部 API クライアント."""
 
-    def __init__(self, email: str, password: str) -> None:
+    def __init__(self, session_cookie: str) -> None:
         self._session = requests.Session()
         self._session.headers.update(_HEADERS)
         self._access_token: str = ""
         self._user_id: str = ""
-        self._login(email, password)
+        self._authenticate(session_cookie)
 
-    def _login(self, email: str, password: str) -> None:
-        """フォームベースのログインと Bearer トークン取得."""
-        # ステップ1: ログインページ取得（429/5xx はリトライ）
-        login_page = _mfp_request_with_retry(
-            self._session.get, f"{_BASE_URL}/user/login", timeout=30
+    def _authenticate(self, session_cookie: str) -> None:
+        """セッションクッキーをセットして Bearer トークンを取得する."""
+        self._session.cookies.set(
+            "__Secure-next-auth.session-token",
+            session_cookie,
+            domain="www.myfitnesspal.com",
+            secure=True,
         )
-        if not login_page.ok:
-            raise MfpAuthError(
-                f"ログインページの取得に失敗しました: HTTP {login_page.status_code}"
-            )
 
-        soup = BeautifulSoup(login_page.text, "lxml")
-        token_input = soup.find("input", {"name": "authenticity_token"})
-        if not token_input:
-            raise MfpAuthError(
-                "ログインページの CSRF トークン (authenticity_token) が見つかりません"
-            )
-        authenticity_token = token_input.get("value")
-        if not authenticity_token:
-            raise MfpAuthError(
-                "ログインページの authenticity_token に value 属性がありません"
-            )
-
-        # ステップ2: ログインフォーム送信（429/5xx はリトライ）
-        resp = _mfp_request_with_retry(
-            self._session.post,
-            f"{_BASE_URL}/user/login",
-            data={
-                "user[email]": email,
-                "user[password]": password,
-                "authenticity_token": authenticity_token,
-            },
-            timeout=30,
-            allow_redirects=True,
-        )
-        if not resp.ok:
-            raise MfpAuthError(f"ログインリクエストに失敗しました: HTTP {resp.status_code}")
-
-        # ステップ3: Bearer トークン取得（429/5xx はリトライ、401 は即座失敗）
         auth_resp = _mfp_request_with_retry(
             self._session.get,
             f"{_BASE_URL}/user/auth_token",
@@ -228,14 +192,33 @@ class MyFitnessPalClient:
                 f"認証トークンの取得に失敗しました: HTTP {auth_resp.status_code}"
             )
 
+        if not auth_resp.text:
+            raise MfpAuthError(
+                "認証トークンのレスポンスが空です（セッションクッキーが無効または期限切れの可能性があります）"
+            )
+
         try:
             auth_data = auth_resp.json()
-            self._access_token = auth_data["access_token"]
-            self._user_id = str(auth_data["user_id"])
-        except (json.JSONDecodeError, KeyError) as exc:
+            access_token = auth_data.get("access_token")
+            user_id = auth_data.get("user_id")
+        except json.JSONDecodeError as exc:
             raise MfpAuthError(
-                f"認証トークンの解析に失敗しました（ログイン失敗または CAPTCHA が発生した可能性があります）: {exc}"
+                f"認証トークンの解析に失敗しました（セッションクッキーが無効または期限切れの可能性があります）: {exc}"
             ) from exc
+
+        if not access_token:
+            raise MfpAuthError(
+                "認証トークンに access_token が含まれていません"
+                "（セッションクッキーが無効または期限切れの可能性があります）"
+            )
+        if user_id is None:
+            raise MfpAuthError(
+                "認証トークンに user_id が含まれていません"
+                "（セッションクッキーが無効または期限切れの可能性があります）"
+            )
+
+        self._access_token = str(access_token)
+        self._user_id = str(user_id)
 
         logger.info("MyFitnessPal にログインしました", extra={"user_id": self._user_id})
 

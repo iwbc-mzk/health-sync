@@ -148,7 +148,7 @@ check_secret() {
     --query SecretString \
     --output text)
 
-  for key in asken_email asken_password myfitnesspal_email myfitnesspal_password; do
+  for key in asken_email asken_password myfitnesspal_session_cookie; do
     if ! S="$secret_value" K="$key" python3 -c \
         "import sys,json,os; d=json.loads(os.environ['S']); sys.exit(0 if os.environ['K'] in d else 1)" \
         2>/dev/null; then

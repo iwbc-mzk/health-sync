@@ -65,10 +65,11 @@
 {
   "asken_email": "...",
   "asken_password": "...",
-  "myfitnesspal_email": "...",
-  "myfitnesspal_password": "..."
+  "myfitnesspal_session_cookie": "..."
 }
 ```
+
+`myfitnesspal_session_cookie` はブラウザで MFP にログイン後、開発者ツール → Application → Cookies → `www.myfitnesspal.com` から `__Secure-next-auth.session-token` の値を取得する。クッキーの有効期限が切れると Lambda が `MfpAuthError` で失敗するため、期限切れ時は `scripts/create_secret_mfp.sh` で値を更新する。
 
 ## インフラ構成
 

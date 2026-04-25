@@ -26,12 +26,11 @@ _SNACK = MealNutrition(MealType.SNACKS, 200.0, 5.0, 8.0, 30.0)
 def _make_credentials(
     asken_email: str = "a@example.com",
     asken_password: str = "apass",
-    mfp_email: str = "m@example.com",
-    mfp_password: str = "mpass",
+    mfp_session_cookie: str = "test_session_token",
 ):
     from asken_myfitnesspal_sync.config import Credentials
 
-    return Credentials(asken_email, asken_password, mfp_email, mfp_password)
+    return Credentials(asken_email, asken_password, mfp_session_cookie)
 
 
 class TestAggregateNutrition:

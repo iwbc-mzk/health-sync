@@ -75,11 +75,16 @@ read_credentials() {
   read -r -p "あすけん メールアドレス: " ASKEN_EMAIL
   read -r -s -p "あすけん パスワード: " ASKEN_PASSWORD
   echo ""
-  read -r -p "MyFitnessPal メールアドレス: " MFP_EMAIL
-  read -r -s -p "MyFitnessPal パスワード: " MFP_PASSWORD
+  echo ""
+  info "MyFitnessPal のセッションクッキーを取得する手順:"
+  info "  1. ブラウザで https://www.myfitnesspal.com にログイン"
+  info "  2. 開発者ツール → Application → Cookies → www.myfitnesspal.com"
+  info "  3. '__Secure-next-auth.session-token' の値をコピー"
+  echo ""
+  read -r -s -p "MyFitnessPal セッションクッキー (__Secure-next-auth.session-token): " MFP_SESSION_COOKIE
   echo ""
 
-  if [[ -z "$ASKEN_EMAIL" || -z "$ASKEN_PASSWORD" || -z "$MFP_EMAIL" || -z "$MFP_PASSWORD" ]]; then
+  if [[ -z "$ASKEN_EMAIL" || -z "$ASKEN_PASSWORD" || -z "$MFP_SESSION_COOKIE" ]]; then
     error "すべての認証情報を入力してください。"
     exit 1
   fi
@@ -92,15 +97,13 @@ create_or_update_secret() {
   local secret_json
   secret_json=$(ASKEN_EMAIL="$ASKEN_EMAIL" \
     ASKEN_PASSWORD="$ASKEN_PASSWORD" \
-    MFP_EMAIL="$MFP_EMAIL" \
-    MFP_PASSWORD="$MFP_PASSWORD" \
+    MFP_SESSION_COOKIE="$MFP_SESSION_COOKIE" \
     python3 -c '
 import json, os
 print(json.dumps({
-    "asken_email":           os.environ["ASKEN_EMAIL"],
-    "asken_password":        os.environ["ASKEN_PASSWORD"],
-    "myfitnesspal_email":    os.environ["MFP_EMAIL"],
-    "myfitnesspal_password": os.environ["MFP_PASSWORD"],
+    "asken_email":                   os.environ["ASKEN_EMAIL"],
+    "asken_password":                os.environ["ASKEN_PASSWORD"],
+    "myfitnesspal_session_cookie":   os.environ["MFP_SESSION_COOKIE"],
 }))
 ')
 
@@ -174,10 +177,10 @@ main() {
   echo "  シークレット: ${SECRET_NAME}"
   echo ""
   echo "  シークレット構造:"
-  echo "    asken_email           : あすけんログイン用メールアドレス"
-  echo "    asken_password        : あすけんログイン用パスワード"
-  echo "    myfitnesspal_email    : MyFitnessPal ログイン用メールアドレス"
-  echo "    myfitnesspal_password : MyFitnessPal ログイン用パスワード"
+  echo "    asken_email                  : あすけんログイン用メールアドレス"
+  echo "    asken_password               : あすけんログイン用パスワード"
+  echo "    myfitnesspal_session_cookie  : MyFitnessPal セッションクッキー値"
+  echo "                                   (__Secure-next-auth.session-token)"
   echo ""
 
   check_prerequisites

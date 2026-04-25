@@ -40,14 +40,10 @@ def _secrets_client() -> SecretsManagerClient:
 class Credentials:
     asken_email: str
     asken_password: str
-    myfitnesspal_email: str
-    myfitnesspal_password: str
+    myfitnesspal_session_cookie: str
 
     def __repr__(self) -> str:
-        return (
-            f"Credentials(asken_email={self.asken_email!r},"
-            f" myfitnesspal_email={self.myfitnesspal_email!r})"
-        )
+        return f"Credentials(asken_email={self.asken_email!r})"
 
 
 def get_credentials(secret_name: str | None = None) -> Credentials:
@@ -79,7 +75,7 @@ def get_credentials(secret_name: str | None = None) -> Credentials:
     if not isinstance(raw, dict):
         raise ValueError("シークレットの形式が不正です（JSON オブジェクトを期待）")
 
-    required_keys = ("asken_email", "asken_password", "myfitnesspal_email", "myfitnesspal_password")
+    required_keys = ("asken_email", "asken_password", "myfitnesspal_session_cookie")
     missing = [k for k in required_keys if k not in raw]
     if missing:
         raise ValueError(f"シークレットに必須キーが存在しません: {missing}")
@@ -87,8 +83,7 @@ def get_credentials(secret_name: str | None = None) -> Credentials:
     return Credentials(
         asken_email=str(raw["asken_email"]),
         asken_password=str(raw["asken_password"]),
-        myfitnesspal_email=str(raw["myfitnesspal_email"]),
-        myfitnesspal_password=str(raw["myfitnesspal_password"]),
+        myfitnesspal_session_cookie=str(raw["myfitnesspal_session_cookie"]),
     )
 
 

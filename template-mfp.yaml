@@ -31,7 +31,7 @@ Parameters:
     Description: >
       AWS Secrets Manager secret name.
       The secret must be a JSON object containing the keys:
-      asken_email / asken_password / myfitnesspal_email / myfitnesspal_password
+      asken_email / asken_password / myfitnesspal_session_cookie
 
 # --- Resources ---
 Resources:
@@ -86,7 +86,7 @@ Resources:
           Type: ScheduleV2
           Properties:
             Name: asken-myfitnesspal-sync-hourly
-            ScheduleExpression: "rate(1 hour)"
+            ScheduleExpression: "cron(0 * * * ? *)"
             State: ENABLED
             Description: Asken to MyFitnessPal hourly sync
             FlexibleTimeWindow:

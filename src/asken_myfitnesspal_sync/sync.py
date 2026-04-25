@@ -66,7 +66,7 @@ def sync_meals(target_date: date, credentials: Credentials) -> MealSyncResult:
     result = MealSyncResult()
 
     asken_client = AskenClient(credentials.asken_email, credentials.asken_password)
-    mfp_client = MyFitnessPalClient(credentials.myfitnesspal_email, credentials.myfitnesspal_password)
+    mfp_client = MyFitnessPalClient(credentials.myfitnesspal_session_cookie)
 
     daily_meals = asken_client.get_daily_meals(target_date)
     asken_by_type: dict[MealType, MealNutrition] = {m.meal_type: m for m in daily_meals.meals}

@@ -20,8 +20,7 @@ _SECRET_NAME = "test-asken-myfitnesspal-sync"
 _VALID_SECRET = {
     "asken_email": "asken@example.com",
     "asken_password": "asken_pass",
-    "myfitnesspal_email": "mfp@example.com",
-    "myfitnesspal_password": "mfp_pass",
+    "myfitnesspal_session_cookie": "test_session_token_value",
 }
 
 
@@ -71,8 +70,7 @@ class TestGetCredentials:
         assert isinstance(creds, Credentials)
         assert creds.asken_email == "asken@example.com"
         assert creds.asken_password == "asken_pass"
-        assert creds.myfitnesspal_email == "mfp@example.com"
-        assert creds.myfitnesspal_password == "mfp_pass"
+        assert creds.myfitnesspal_session_cookie == "test_session_token_value"
 
     def test_uses_default_secret_name_when_not_specified(self, sm_client, monkeypatch):
         monkeypatch.setenv("SECRET_NAME", "")
@@ -151,7 +149,7 @@ class TestGetCredentials:
 
     @pytest.mark.parametrize(
         "missing_key",
-        ["asken_email", "asken_password", "myfitnesspal_email", "myfitnesspal_password"],
+        ["asken_email", "asken_password", "myfitnesspal_session_cookie"],
     )
     def test_raises_when_required_key_missing(self, sm_client, missing_key: str):
         secret = {k: v for k, v in _VALID_SECRET.items() if k != missing_key}
@@ -167,7 +165,7 @@ class TestGetCredentials:
 
         repr_str = repr(creds)
         assert "asken_pass" not in repr_str
-        assert "mfp_pass" not in repr_str
+        assert "test_session_token_value" not in repr_str
         assert "asken@example.com" in repr_str
 
     def test_raises_client_error_when_secret_not_found(self, sm_client):

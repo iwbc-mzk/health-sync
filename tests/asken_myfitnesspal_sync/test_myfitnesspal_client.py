@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 from datetime import date
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -21,24 +20,18 @@ from asken_myfitnesspal_sync.myfitnesspal_client import (
     _mfp_request_with_retry,
 )
 
-FIXTURES_DIR = Path(__file__).parent / "fixtures"
-
-_LOGIN_URL = f"{_BASE_URL}/user/login"
 _AUTH_TOKEN_URL = f"{_BASE_URL}/user/auth_token"
 _DIARY_URL = f"{_API_URL}/v2/diary"
 _FOODS_URL = f"{_API_URL}/v2/foods"
 
 TARGET_DATE = date(2026, 4, 19)
 
-_MFP_LOGIN_PAGE = (FIXTURES_DIR / "mfp_login_page.html").read_text(encoding="utf-8")
+_TEST_SESSION_COOKIE = "test_session_token_value"
 _AUTH_TOKEN_JSON = json.dumps({"access_token": "test_bearer_token", "user_id": 99999})
-_LOGIN_SUCCESS_HTML = "<html><body>Welcome back!</body></html>"
 
 
-def _add_login_mocks() -> None:
-    """ログイン成功用の responses モックを登録する."""
-    responses_lib.add(responses_lib.GET, _LOGIN_URL, body=_MFP_LOGIN_PAGE, status=200)
-    responses_lib.add(responses_lib.POST, _LOGIN_URL, body=_LOGIN_SUCCESS_HTML, status=200)
+def _add_auth_mocks() -> None:
+    """認証成功用の responses モックを登録する（クッキーベース）."""
     responses_lib.add(
         responses_lib.GET,
         _AUTH_TOKEN_URL,
@@ -69,53 +62,40 @@ def _build_diary_item(
     }
 
 
-class TestLogin:
+class TestAuthenticate:
     @responses_lib.activate
-    def test_login_success(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("user@example.com", "password")
+    def test_authenticate_success(self) -> None:
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
         assert client._access_token == "test_bearer_token"
         assert client._user_id == "99999"
 
     @responses_lib.activate
-    def test_login_page_fetch_failure(self, mock_mfp_sleep) -> None:
+    def test_auth_token_connection_error_retries(self, mock_mfp_sleep) -> None:
         responses_lib.add(
             responses_lib.GET,
-            _LOGIN_URL,
+            _AUTH_TOKEN_URL,
             body=requests.exceptions.ConnectionError("Connection error"),
         )
         with pytest.raises(MfpError, match="MFP リクエストが"):
-            MyFitnessPalClient("user@example.com", "password")
+            MyFitnessPalClient(_TEST_SESSION_COOKIE)
         assert mock_mfp_sleep.call_count == 3
 
     @responses_lib.activate
-    def test_login_page_missing_csrf_token(self) -> None:
+    def test_auth_token_empty_response_raises_auth_error(self) -> None:
+        """空レスポンスはセッションクッキーが無効または期限切れ."""
         responses_lib.add(
             responses_lib.GET,
-            _LOGIN_URL,
-            body="<html><body>No form here</body></html>",
+            _AUTH_TOKEN_URL,
+            body="",
             status=200,
         )
-        with pytest.raises(MfpAuthError, match="CSRF トークン"):
-            MyFitnessPalClient("user@example.com", "password")
-
-    @responses_lib.activate
-    def test_login_post_failure(self, mock_mfp_sleep) -> None:
-        responses_lib.add(responses_lib.GET, _LOGIN_URL, body=_MFP_LOGIN_PAGE, status=200)
-        responses_lib.add(
-            responses_lib.POST,
-            _LOGIN_URL,
-            body=requests.exceptions.ConnectionError("Network error"),
-        )
-        with pytest.raises(MfpError, match="MFP リクエストが"):
-            MyFitnessPalClient("user@example.com", "password")
-        assert mock_mfp_sleep.call_count == 3
+        with pytest.raises(MfpAuthError, match="レスポンスが空です"):
+            MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
     @responses_lib.activate
     def test_auth_token_non_json_response_raises_auth_error(self) -> None:
-        """CAPTCHA やログイン失敗でリダイレクトされ非 JSON が返る場合."""
-        responses_lib.add(responses_lib.GET, _LOGIN_URL, body=_MFP_LOGIN_PAGE, status=200)
-        responses_lib.add(responses_lib.POST, _LOGIN_URL, body=_LOGIN_SUCCESS_HTML, status=200)
+        """非 JSON レスポンスはクッキー期限切れ等を示す."""
         responses_lib.add(
             responses_lib.GET,
             _AUTH_TOKEN_URL,
@@ -123,38 +103,65 @@ class TestLogin:
             status=200,
         )
         with pytest.raises(MfpAuthError, match="認証トークンの解析に失敗しました"):
-            MyFitnessPalClient("user@example.com", "password")
+            MyFitnessPalClient(_TEST_SESSION_COOKIE)
+
+    @responses_lib.activate
+    def test_session_cookie_sent_in_request(self) -> None:
+        """セッションクッキーが auth_token リクエストに含まれること."""
+        _add_auth_mocks()
+        MyFitnessPalClient(_TEST_SESSION_COOKIE)
+        sent_cookie = responses_lib.calls[0].request.headers.get("Cookie", "")
+        assert _TEST_SESSION_COOKIE in sent_cookie
 
     @responses_lib.activate
     def test_auth_token_missing_key_raises_auth_error(self) -> None:
-        responses_lib.add(responses_lib.GET, _LOGIN_URL, body=_MFP_LOGIN_PAGE, status=200)
-        responses_lib.add(responses_lib.POST, _LOGIN_URL, body=_LOGIN_SUCCESS_HTML, status=200)
         responses_lib.add(
             responses_lib.GET,
             _AUTH_TOKEN_URL,
             json={"something_else": "value"},
             status=200,
         )
-        with pytest.raises(MfpAuthError, match="認証トークンの解析に失敗しました"):
-            MyFitnessPalClient("user@example.com", "password")
+        with pytest.raises(MfpAuthError, match="access_token"):
+            MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
     @responses_lib.activate
-    def test_login_page_csrf_token_missing_value_attr_raises_auth_error(self) -> None:
-        """authenticity_token 要素は存在するが value 属性がない場合."""
+    def test_auth_token_null_access_token_raises_auth_error(self) -> None:
+        """access_token が null の場合は MfpAuthError."""
         responses_lib.add(
             responses_lib.GET,
-            _LOGIN_URL,
-            body='<html><body><form><input name="authenticity_token"/></form></body></html>',
+            _AUTH_TOKEN_URL,
+            json={"access_token": None, "user_id": 99999},
             status=200,
         )
-        with pytest.raises(MfpAuthError, match="value 属性がありません"):
-            MyFitnessPalClient("user@example.com", "password")
+        with pytest.raises(MfpAuthError, match="access_token"):
+            MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
     @responses_lib.activate
-    def test_auth_token_401_with_valid_json_raises_auth_error(self) -> None:
-        """認証失敗: 401 ステータスで valid JSON が返っても MfpAuthError になること."""
-        responses_lib.add(responses_lib.GET, _LOGIN_URL, body=_MFP_LOGIN_PAGE, status=200)
-        responses_lib.add(responses_lib.POST, _LOGIN_URL, body=_LOGIN_SUCCESS_HTML, status=200)
+    def test_auth_token_null_user_id_raises_auth_error(self) -> None:
+        """user_id が null の場合は MfpAuthError."""
+        responses_lib.add(
+            responses_lib.GET,
+            _AUTH_TOKEN_URL,
+            json={"access_token": "tok", "user_id": None},
+            status=200,
+        )
+        with pytest.raises(MfpAuthError, match="user_id"):
+            MyFitnessPalClient(_TEST_SESSION_COOKIE)
+
+    @responses_lib.activate
+    def test_auth_token_user_id_zero_is_valid(self) -> None:
+        """user_id=0 は有効な値であり MfpAuthError を送出しないこと."""
+        responses_lib.add(
+            responses_lib.GET,
+            _AUTH_TOKEN_URL,
+            json={"access_token": "tok", "user_id": 0},
+            status=200,
+        )
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
+        assert client._user_id == "0"
+
+    @responses_lib.activate
+    def test_auth_token_401_raises_auth_error(self) -> None:
         responses_lib.add(
             responses_lib.GET,
             _AUTH_TOKEN_URL,
@@ -162,47 +169,11 @@ class TestLogin:
             status=401,
         )
         with pytest.raises(MfpAuthError):
-            MyFitnessPalClient("user@example.com", "password")
+            MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
     @responses_lib.activate
-    def test_login_page_get_429_retries_then_succeeds(self, mock_mfp_sleep) -> None:
-        """ログインページ GET で 429 を受けた場合、リトライして成功すること."""
-        responses_lib.add(responses_lib.GET, _LOGIN_URL, status=429)
-        responses_lib.add(responses_lib.GET, _LOGIN_URL, body=_MFP_LOGIN_PAGE, status=200)
-        responses_lib.add(responses_lib.POST, _LOGIN_URL, body=_LOGIN_SUCCESS_HTML, status=200)
-        responses_lib.add(
-            responses_lib.GET,
-            _AUTH_TOKEN_URL,
-            body=_AUTH_TOKEN_JSON,
-            status=200,
-            content_type="application/json",
-        )
-        client = MyFitnessPalClient("user@example.com", "password")
-        assert client._access_token == "test_bearer_token"
-        mock_mfp_sleep.assert_called_once()
-
-    @responses_lib.activate
-    def test_login_post_429_retries_then_succeeds(self, mock_mfp_sleep) -> None:
-        """ログイン POST で 429 を受けた場合、リトライして成功すること."""
-        responses_lib.add(responses_lib.GET, _LOGIN_URL, body=_MFP_LOGIN_PAGE, status=200)
-        responses_lib.add(responses_lib.POST, _LOGIN_URL, status=429)
-        responses_lib.add(responses_lib.POST, _LOGIN_URL, body=_LOGIN_SUCCESS_HTML, status=200)
-        responses_lib.add(
-            responses_lib.GET,
-            _AUTH_TOKEN_URL,
-            body=_AUTH_TOKEN_JSON,
-            status=200,
-            content_type="application/json",
-        )
-        client = MyFitnessPalClient("user@example.com", "password")
-        assert client._access_token == "test_bearer_token"
-        mock_mfp_sleep.assert_called_once()
-
-    @responses_lib.activate
-    def test_auth_token_get_429_retries_then_succeeds(self, mock_mfp_sleep) -> None:
+    def test_auth_token_429_retries_then_succeeds(self, mock_mfp_sleep) -> None:
         """auth_token GET で 429 を受けた場合、リトライして成功すること."""
-        responses_lib.add(responses_lib.GET, _LOGIN_URL, body=_MFP_LOGIN_PAGE, status=200)
-        responses_lib.add(responses_lib.POST, _LOGIN_URL, body=_LOGIN_SUCCESS_HTML, status=200)
         responses_lib.add(responses_lib.GET, _AUTH_TOKEN_URL, status=429)
         responses_lib.add(
             responses_lib.GET,
@@ -211,7 +182,7 @@ class TestLogin:
             status=200,
             content_type="application/json",
         )
-        client = MyFitnessPalClient("user@example.com", "password")
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
         assert client._access_token == "test_bearer_token"
         mock_mfp_sleep.assert_called_once()
 
@@ -219,8 +190,8 @@ class TestLogin:
 class TestGetMealEntries:
     @responses_lib.activate
     def test_get_meal_entries_returns_matching_entries(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         items = [
             _build_diary_item("e1", meal_position=0, calories=400, protein=20, fat=10, carbs=50),
@@ -239,8 +210,8 @@ class TestGetMealEntries:
 
     @responses_lib.activate
     def test_get_meal_entries_returns_empty_for_no_match(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(
             responses_lib.GET,
@@ -253,8 +224,8 @@ class TestGetMealEntries:
 
     @responses_lib.activate
     def test_get_meal_entries_401_raises_auth_error(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(responses_lib.GET, _DIARY_URL, status=401)
         with pytest.raises(MfpAuthError):
@@ -262,8 +233,8 @@ class TestGetMealEntries:
 
     @responses_lib.activate
     def test_get_meal_entries_5xx_raises_mfp_error(self, mock_mfp_sleep) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(responses_lib.GET, _DIARY_URL, status=500)
         with pytest.raises(MfpError, match="HTTP 500"):
@@ -272,8 +243,8 @@ class TestGetMealEntries:
 
     @responses_lib.activate
     def test_get_meal_entries_non_json_raises_mfp_error(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(
             responses_lib.GET,
@@ -286,8 +257,8 @@ class TestGetMealEntries:
 
     @responses_lib.activate
     def test_get_meal_entries_request_error_raises_mfp_error(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(
             responses_lib.GET,
@@ -300,8 +271,8 @@ class TestGetMealEntries:
     @responses_lib.activate
     def test_get_meal_entries_items_null_returns_empty_list(self) -> None:
         """{"items": null} レスポンスで空リストを返すこと."""
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(responses_lib.GET, _DIARY_URL, json={"items": None}, status=200)
         result = client.get_meal_entries(TARGET_DATE, MealType.BREAKFAST)
@@ -309,8 +280,8 @@ class TestGetMealEntries:
 
     @responses_lib.activate
     def test_get_meal_entries_maps_nutritional_contents(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         item = _build_diary_item("e1", meal_position=3, calories=150, protein=8, fat=4, carbs=20)
         responses_lib.add(responses_lib.GET, _DIARY_URL, json={"items": [item]}, status=200)
@@ -330,8 +301,8 @@ class TestAddMealEntry:
 
     @responses_lib.activate
     def test_add_meal_entry_success(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(
             responses_lib.POST,
@@ -345,8 +316,8 @@ class TestAddMealEntry:
 
     @responses_lib.activate
     def test_add_meal_entry_diary_200_also_succeeds(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(
             responses_lib.POST,
@@ -360,8 +331,8 @@ class TestAddMealEntry:
 
     @responses_lib.activate
     def test_add_meal_entry_food_creation_401_raises_auth_error(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(responses_lib.POST, _FOODS_URL, status=401)
         with pytest.raises(MfpAuthError):
@@ -369,8 +340,8 @@ class TestAddMealEntry:
 
     @responses_lib.activate
     def test_add_meal_entry_food_creation_non_json_raises_mfp_error(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(
             responses_lib.POST,
@@ -384,8 +355,8 @@ class TestAddMealEntry:
     @responses_lib.activate
     def test_add_meal_entry_food_item_null_raises_mfp_error(self) -> None:
         """{"item": null} レスポンス時に MfpError を送出すること."""
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(
             responses_lib.POST,
@@ -398,8 +369,8 @@ class TestAddMealEntry:
 
     @responses_lib.activate
     def test_add_meal_entry_food_creation_missing_id_raises_mfp_error(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(
             responses_lib.POST,
@@ -412,8 +383,8 @@ class TestAddMealEntry:
 
     @responses_lib.activate
     def test_add_meal_entry_food_creation_5xx_raises_mfp_error(self, mock_mfp_sleep) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(responses_lib.POST, _FOODS_URL, status=500, body="Internal Error")
         with pytest.raises(MfpError, match="HTTP 500"):
@@ -422,8 +393,8 @@ class TestAddMealEntry:
 
     @responses_lib.activate
     def test_add_meal_entry_diary_401_raises_auth_error(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(
             responses_lib.POST,
@@ -438,8 +409,8 @@ class TestAddMealEntry:
 
     @responses_lib.activate
     def test_add_meal_entry_diary_5xx_raises_mfp_error(self, mock_mfp_sleep) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(
             responses_lib.POST,
@@ -455,8 +426,8 @@ class TestAddMealEntry:
 
     @responses_lib.activate
     def test_add_meal_entry_food_creation_network_error_raises_mfp_error(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(
             responses_lib.POST,
@@ -468,8 +439,8 @@ class TestAddMealEntry:
 
     @responses_lib.activate
     def test_add_meal_entry_diary_network_error_raises_mfp_error(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(
             responses_lib.POST,
@@ -488,8 +459,8 @@ class TestAddMealEntry:
     @responses_lib.activate
     def test_add_meal_entry_maps_meal_position_correctly(self) -> None:
         """食事区分が正しい meal_position にマッピングされることを確認."""
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(
             responses_lib.POST,
@@ -515,8 +486,8 @@ class TestAddMealEntry:
 class TestDeleteMealEntries:
     @responses_lib.activate
     def test_delete_meal_entries_success(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         items = [
             _build_diary_item("e1", meal_position=0, calories=400, protein=20, fat=10, carbs=50),
@@ -535,8 +506,8 @@ class TestDeleteMealEntries:
 
     @responses_lib.activate
     def test_delete_meal_entries_no_matching_entries_does_nothing(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(
             responses_lib.GET,
@@ -549,8 +520,8 @@ class TestDeleteMealEntries:
 
     @responses_lib.activate
     def test_delete_meal_entries_401_on_get_raises_auth_error(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(responses_lib.GET, _DIARY_URL, status=401)
         with pytest.raises(MfpAuthError):
@@ -558,8 +529,8 @@ class TestDeleteMealEntries:
 
     @responses_lib.activate
     def test_delete_meal_entries_401_on_delete_raises_auth_error(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(
             responses_lib.GET,
@@ -574,8 +545,8 @@ class TestDeleteMealEntries:
 
     @responses_lib.activate
     def test_delete_meal_entries_5xx_raises_mfp_error(self, mock_mfp_sleep) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(
             responses_lib.GET,
@@ -591,8 +562,8 @@ class TestDeleteMealEntries:
 
     @responses_lib.activate
     def test_delete_meal_entries_skips_items_without_id(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         items = [
             {"type": "food_entry", "meal_position": 0, "nutritional_contents": {}},
@@ -605,8 +576,8 @@ class TestDeleteMealEntries:
 
     @responses_lib.activate
     def test_delete_meal_entries_delete_network_error_raises_mfp_error(self) -> None:
-        _add_login_mocks()
-        client = MyFitnessPalClient("u@example.com", "pw")
+        _add_auth_mocks()
+        client = MyFitnessPalClient(_TEST_SESSION_COOKIE)
 
         responses_lib.add(
             responses_lib.GET,
