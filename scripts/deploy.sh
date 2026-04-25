@@ -13,6 +13,10 @@
 
 set -euo pipefail
 
+# ─── スクリプトのディレクトリを基準に絶対パスを解決する ──────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 # ─── デフォルト値 ─────────────────────────────────────────────────────────────
 REGION="ap-northeast-1"
 PROFILE="default"
@@ -52,12 +56,36 @@ done
 check_prerequisites() {
   info "前提条件を確認しています..."
 
+  if ! command -v python3 &>/dev/null; then
+    error "python3 が見つかりません。インストールしてください:"
+    error "  https://www.python.org/downloads/"
+    exit 1
+  fi
+  success "python3: $(python3 --version)"
+
   if ! command -v sam &>/dev/null; then
     error "SAM CLI が見つかりません。以下でインストールしてください:"
     error "  https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html"
     exit 1
   fi
-  success "SAM CLI: $(sam --version)"
+  local sam_version
+  sam_version=$(sam --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+  local required_version="1.111.0"
+  if [[ -z "$sam_version" ]]; then
+    error "SAM CLI のバージョンを取得できませんでした。"
+    error "  sam --version を手動で確認してください。"
+    exit 1
+  fi
+  if ! python3 -c "
+v = tuple(int(x) for x in '${sam_version}'.split('.'))
+r = tuple(int(x) for x in '${required_version}'.split('.'))
+exit(0 if v >= r else 1)
+"; then
+    error "SAM CLI ${sam_version} は要件未満です。${required_version} 以上が必要です (makefile ビルドサポート)。"
+    error "  pip install --upgrade aws-sam-cli"
+    exit 1
+  fi
+  success "SAM CLI: ${sam_version}"
 
   if ! command -v aws &>/dev/null; then
     error "AWS CLI が見つかりません。以下でインストールしてください:"
@@ -112,7 +140,7 @@ check_secret() {
     --output text)
 
   for key in asken_email asken_password garmin_email garmin_password; do
-    if ! S="$secret_value" K="$key" python -c \
+    if ! S="$secret_value" K="$key" python3 -c \
         "import sys,json,os; d=json.loads(os.environ['S']); sys.exit(0 if os.environ['K'] in d else 1)" \
         2>/dev/null; then
       error "シークレットに必須キー '${key}' がありません。"
@@ -123,8 +151,26 @@ check_secret() {
   success "シークレット確認済み (必須キーすべて存在)"
 }
 
+# ─── utils コピー / クリーンアップ ────────────────────────────────────────────
+# Docker コンテナは CodeUri ディレクトリのみマウントされるため、
+# ビルド前に src/utils/ を CodeUri 内に一時コピーして Makefile から参照できるようにする。
+_UTILS_DST="${REPO_ROOT}/src/asken_garmin_sync/utils"
+
+cleanup_utils() {
+  if [[ -d "$_UTILS_DST" ]]; then
+    rm -rf "$_UTILS_DST"
+  fi
+}
+
+copy_utils() {
+  cleanup_utils
+  cp -r "${REPO_ROOT}/src/utils" "$_UTILS_DST"
+  info "utils をコピーしました: ${_UTILS_DST}"
+}
+
 # ─── SAM ビルド ───────────────────────────────────────────────────────────────
 sam_build() {
+  cd "$REPO_ROOT"
   info "SAM ビルドを開始します (use_container=true)..."
   sam build \
     --use-container \
@@ -145,9 +191,7 @@ sam_deploy() {
       --region "$REGION" \
       --parameter-overrides "SecretName=${SECRET_NAME}"
   else
-    info "SAM デプロイを開始します (チェンジセットプレビュー中)..."
-    # --no-confirm-changeset でプレビューのみ表示し、スクリプト側で実行可否を確認する。
-    # samconfig.toml の confirm_changeset = true はここでは使用しない。
+    info "SAM デプロイを開始します..."
     sam deploy \
       --no-confirm-changeset \
       --profile "$PROFILE" \
@@ -202,8 +246,11 @@ main() {
   echo "  シークレット: ${SECRET_NAME}"
   echo ""
 
+  trap cleanup_utils EXIT
+
   check_prerequisites
   check_secret
+  copy_utils
   sam_build
   sam_deploy
   post_deploy_check

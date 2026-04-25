@@ -1,0 +1,125 @@
+## 2026-04-24 — MFP Lambda デプロイ ImportError 修正
+
+### 問題
+Lambda デプロイ後に `No module named 'bs4'` (beautifulsoup4) のインポートエラーが発生。
+
+### 根本原因
+`scripts/deploy_mfp.sh` の `sam_build()` に `--config-env mfp` が渡されておらず、`samconfig.toml` のデフォルト設定（`template-garmin.yaml`）でビルドされていた。
+その結果 `requirements_mfp.txt` が参照されず、`bs4`/`lxml`/`requests` がインストールされないままデプロイされた。
+
+### 変更ファイル
+- `scripts/deploy_mfp.sh`
+  - `check_prerequisites()`: `python3` 存在チェック追加、SAM CLI >= 1.111.0 バージョンチェック追加
+  - `sam_build()`: `cd "$REPO_ROOT"` 追加（samconfig.toml 検索パス保証）、`--config-env "$CONFIG_ENV"` と `--template-file "$TEMPLATE_FILE"` 追加
+  - `sam_deploy()`: `--config-env "$CONFIG_ENV"` 追加（`--template-file` は除外 — ビルド成果物自動検出のため）
+  - CRLF → LF 変換
+  - 誤ったコメント「スクリプト側で実行可否を確認する」削除
+- `scripts/deploy.sh`: 同じ誤ったコメントを削除
+
+---
+
+## 2026-04-24 — EarlyValidation::ResourceExistenceCheck エラー修正
+
+### 問題
+`deploy_mfp.sh` でデプロイすると changeset 作成時に以下のエラーが発生：
+`The following hook(s)/validation failed: [AWS::EarlyValidation::ResourceExistenceCheck]`
+
+### 根本原因
+SAM `Events` の `ScheduleV2` で `GroupName: !Ref SyncScheduleGroup` を使うと、SAM transformer が `DependsOn` から `SyncScheduleGroup` を剥落させ、かつ EarlyValidation が GroupName の実在チェック時にグループ未作成と判断して失敗していた。
+
+### 変更ファイル
+- `template-mfp.yaml`
+  - SAM `Events` からスケジュール定義を完全に削除
+  - `HourlySchedule` / `DailySchedule` を `AWS::Scheduler::Schedule` 独立リソースとして再定義
+    - `DependsOn: [SyncScheduleGroup, SyncFunction]` を直接付与
+    - `GroupName: !Ref SyncScheduleGroup` を使用
+    - `Target.Arn` / `Target.RoleArn` を明示指定
+  - `SchedulerInvokeRole`（IAM ロール）を追加: EventBridge Scheduler → Lambda 呼び出し権限
+  - DailySchedule の cron を `cron(59 14 ...)` → `cron(59 23 ...)` に修正（23:59 JST）
+
+---
+
+## 2026-04-24 — ビルド時 requirements.txt not found + EarlyValidation 追加修正
+
+### 問題1: requirements.txt file not found
+SAM CLI は `RequirementsFile` をテンプレートファイルの場所からの相対パスで解決する。
+`requirements_mfp.txt`（ルート直下）を探して見つからず `requirements.txt` にフォールバックし依存なしでビルドされていた。
+
+### 問題2: PropertyValidation + ResourceExistenceCheck
+- `RetryPolicy` が `Target` の外（Properties 直下）に置かれていた → `PropertyValidation`
+- `SyncScheduleGroup` が未存在のため `GroupName: !Ref SyncScheduleGroup` が EarlyValidation で失敗
+
+### 変更ファイル
+- `template-mfp.yaml`
+  - `RequirementsFile: requirements_mfp.txt` → `RequirementsFile: src/requirements_mfp.txt`
+  - `SyncScheduleGroup` リソースを削除（`default` グループを使用）
+  - `GroupName: !Ref SyncScheduleGroup` を削除
+  - `RetryPolicy` を `Target` 内へ移動
+- `template-garmin.yaml`
+  - `RequirementsFile: requirements_garmin.txt` → `RequirementsFile: src/requirements_garmin.txt`
+
+---
+
+## 2026-04-24 — requirements.txt not found 継続問題 + EarlyValidation 再発
+
+### 問題1: requirements.txt still not found
+`--template-file "/c/Users/..."` (Git Bash POSIX パス) を SAM CLI (Windows 実行ファイル) に渡すと、requirements ファイルパスが POSIX 形式で構築される一方、`source_dir` は Windows 形式 (`C:\...`) となり `startswith` チェックが失敗。requirements ファイルが CodeUri 外として扱われ依存なしでビルドされる。
+
+**修正**: `deploy_mfp.sh` の `sam build` から `--template-file "$TEMPLATE_FILE"` を削除。`samconfig.toml` の相対パス + `cd "$REPO_ROOT"` で正しく解決。
+
+### 問題2: EarlyValidation::ResourceExistenceCheck 再発
+独立した `AWS::Scheduler::Schedule` リソースの `Target.Arn` が EarlyValidation 対象になっていた。
+
+**修正**: `template-mfp.yaml` を Garmin テンプレートと同じ SAM Events パターン（`Type: ScheduleV2`、GroupName なし、default グループ）に戻す。`SyncScheduleGroup`・`SchedulerInvokeRole` を削除。
+
+### 変更ファイル
+- `scripts/deploy_mfp.sh`: `sam build` から `--template-file` 削除、`--group-name` を `default` に修正
+- `template-mfp.yaml`: SAM Events パターンに戻す（Garmin テンプレートと同構造）
+
+---
+
+## 2026-04-24 — CodeUri 機能別ディレクトリ化 + BuildMethod: makefile 対応
+
+### 問題
+SAM は CodeUri ディレクトリ直下の `requirements.txt`（固定名）のみを依存解決に使用する。
+`requirements_mfp.txt` のようなカスタム名は一切読み込まれない（`RequirementsFile` は環境依存で機能しないことが判明）。
+
+### 根本的な変更方針
+ユーザー指示: CodeUri を `src/asken_**` のように機能別ディレクトリに変更し、各ディレクトリに `requirements.txt` を配置する。
+
+### 追加課題
+- `CodeUri: src/asken_myfitnesspal_sync` + `Handler: handler.lambda_handler` だと相対インポート（`from .config import`）が失敗する（top-level モジュールとして実行されるため）
+- `src/utils/` が CodeUri 外にあるため Docker コンテナからアクセス不可
+- 解決策: `BuildMethod: makefile` で Makefile がビルド成果物を組み立てる
+
+### 変更ファイル
+
+#### 新規作成
+- `src/asken_myfitnesspal_sync/Makefile`: `build-SyncFunction` ターゲット — requirements.txt インストール、`asken_myfitnesspal_sync/` パッケージディレクトリ作成、`utils/` コピー
+- `src/asken_garmin_sync/requirements.txt`: garminconnect + requests + beautifulsoup4 + lxml
+- `src/asken_garmin_sync/Makefile`: 同上（asken_garmin_sync パッケージ）
+
+#### template-mfp.yaml
+- `Metadata.BuildMethod: makefile`（`BuildProperties` 配下ではなく `Metadata` 直下に配置）
+- `Handler: asken_myfitnesspal_sync.handler.lambda_handler`（パッケージ修飾名 — 相対インポートに必須）
+- `RequirementsFile` 削除
+
+#### template-garmin.yaml
+- `CodeUri: src/asken_garmin_sync`（`src/` から機能別ディレクトリへ変更）
+- `Metadata.BuildMethod: makefile`（同上）
+- `Handler`: 変更なし（既にパッケージ修飾名）
+- `RequirementsFile` 削除
+
+#### scripts/deploy_mfp.sh / deploy.sh
+- `copy_utils()`: `src/utils/` を CodeUri 内に一時コピー（Docker がアクセスできるよう）
+- `cleanup_utils()`: ビルド後（成否問わず）に一時コピーを削除
+- `trap cleanup_utils EXIT` を main() で設定
+- deploy.sh: `SCRIPT_DIR`/`REPO_ROOT` 追加、SAM CLI バージョンチェック追加、`python` → `python3` 修正
+
+#### samconfig.toml
+- 廃止済み RequirementsFile に関する NOTE コメント削除
+
+### 重要な注意事項
+- `BuildMethod: makefile` は `Metadata` の直下に記述すること（`Metadata.BuildProperties.BuildMethod` は誤り）
+- Makefile のレシピ行はタブ文字（スペース不可）
+- deploy スクリプト経由でのみビルド可（直接 `sam build` すると utils/ が CodeUri にないため Makefile がエラー）

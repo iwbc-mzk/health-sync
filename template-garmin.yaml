@@ -59,20 +59,15 @@ Resources:
     # 先に保持期間 30 日設定済みのロググループが存在する状態にする。
     DependsOn: SyncFunctionLogGroup
     Metadata:
-      BuildProperties:
-        # garminconnect は MFP Lambda に不要なため garmin 専用の requirements ファイルを使用する。
-        # src/requirements_mfp.txt（MFP 専用）には garminconnect を含めず、
-        # src/requirements_garmin.txt にのみ追加してデプロイパッケージを分離する。
-        # ⚠️ RequirementsFile は SAM CLI >= 1.111.0 が必要。
-        #   旧バージョンでは無視され garmin Lambda が ImportError で停止するため、
-        #   sam --version で確認の上 pip install --upgrade aws-sam-cli でアップグレードすること。
-        RequirementsFile: requirements_garmin.txt
+      # Makefile installs requirements.txt, assembles asken_garmin_sync/
+      # package directory, and copies utils/ — all into ARTIFACTS_DIR.
+      BuildMethod: makefile
     Properties:
       FunctionName: asken-garmin-sync
-      # src/ レイアウトのため CodeUri を src に設定する。
-      # SAM は src/requirements_garmin.txt を参照して依存パッケージをインストールし、
-      # src/asken_garmin_sync/ を /var/task/asken_garmin_sync/ として配置する。
-      CodeUri: src/
+      # CodeUri points to the function directory. The Makefile target build-SyncFunction
+      # creates the asken_garmin_sync/ package and utils/ in ARTIFACTS_DIR.
+      # deploy script pre-copies src/utils/ here so Docker can access it during build.
+      CodeUri: src/asken_garmin_sync
       Handler: asken_garmin_sync.handler.lambda_handler
       Description: あすけん ↔ Garmin Connect 双方向データ同期
 

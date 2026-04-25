@@ -59,12 +59,36 @@ done
 check_prerequisites() {
   info "前提条件を確認しています..."
 
+  if ! command -v python3 &>/dev/null; then
+    error "python3 が見つかりません。インストールしてください:"
+    error "  https://www.python.org/downloads/"
+    exit 1
+  fi
+  success "python3: $(python3 --version)"
+
   if ! command -v sam &>/dev/null; then
     error "SAM CLI が見つかりません。以下でインストールしてください:"
     error "  https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html"
     exit 1
   fi
-  success "SAM CLI: $(sam --version)"
+  local sam_version
+  sam_version=$(sam --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+  local required_version="1.111.0"
+  if [[ -z "$sam_version" ]]; then
+    error "SAM CLI のバージョンを取得できませんでした。"
+    error "  sam --version を手動で確認してください。"
+    exit 1
+  fi
+  if ! python3 -c "
+v = tuple(int(x) for x in '${sam_version}'.split('.'))
+r = tuple(int(x) for x in '${required_version}'.split('.'))
+exit(0 if v >= r else 1)
+"; then
+    error "SAM CLI ${sam_version} は要件未満です。${required_version} 以上が必要です (makefile ビルドサポート)。"
+    error "  pip install --upgrade aws-sam-cli"
+    exit 1
+  fi
+  success "SAM CLI: ${sam_version}"
 
   if ! command -v aws &>/dev/null; then
     error "AWS CLI が見つかりません。以下でインストールしてください:"
@@ -136,13 +160,32 @@ check_secret() {
   success "シークレット確認済み (必須キーすべて存在)"
 }
 
+# ─── utils コピー / クリーンアップ ────────────────────────────────────────────
+# Docker コンテナは CodeUri ディレクトリのみマウントされるため、
+# ビルド前に src/utils/ を CodeUri 内に一時コピーして Makefile から参照できるようにする。
+_UTILS_DST="${REPO_ROOT}/src/asken_myfitnesspal_sync/utils"
+
+cleanup_utils() {
+  if [[ -d "$_UTILS_DST" ]]; then
+    rm -rf "$_UTILS_DST"
+  fi
+}
+
+copy_utils() {
+  cleanup_utils
+  cp -r "${REPO_ROOT}/src/utils" "$_UTILS_DST"
+  info "utils をコピーしました: ${_UTILS_DST}"
+}
+
 # ─── SAM ビルド ───────────────────────────────────────────────────────────────
 sam_build() {
+  cd "$REPO_ROOT"
   info "SAM ビルドを開始します (use_container=true, config-env=${CONFIG_ENV})..."
   sam build \
     --use-container \
     --cached \
     --parallel \
+    --config-env "$CONFIG_ENV" \
     --profile "$PROFILE" \
     --region "$REGION"
   success "SAM ビルド完了"
@@ -154,15 +197,15 @@ sam_deploy() {
     info "SAM 対話形式デプロイを開始します..."
     sam deploy \
       --guided \
+      --config-env "$CONFIG_ENV" \
       --profile "$PROFILE" \
       --region "$REGION" \
       --parameter-overrides "SecretName=${SECRET_NAME}"
   else
-    info "SAM デプロイを開始します (チェンジセットプレビュー中)..."
-    # --no-confirm-changeset でプレビューのみ表示し、スクリプト側で実行可否を確認する。
-    # samconfig.toml の confirm_changeset = true はここでは使用しない。
+    info "SAM デプロイを開始します..."
     sam deploy \
       --no-confirm-changeset \
+      --config-env "$CONFIG_ENV" \
       --profile "$PROFILE" \
       --region "$REGION" \
       --parameter-overrides "SecretName=${SECRET_NAME}"
@@ -204,8 +247,10 @@ post_deploy_check() {
   echo ""
   echo "  4. EventBridge スケジュールの確認 (毎時・毎日 23:59 JST で自動実行):"
   echo "     aws scheduler get-schedule --name asken-myfitnesspal-sync-hourly \\"
+  echo "       --group-name default \\"
   echo "       --profile ${PROFILE} --region ${REGION}"
   echo "     aws scheduler get-schedule --name asken-myfitnesspal-sync-daily \\"
+  echo "       --group-name default \\"
   echo "       --profile ${PROFILE} --region ${REGION}"
 }
 
@@ -221,8 +266,11 @@ main() {
   echo "  config-env  : ${CONFIG_ENV}"
   echo ""
 
+  trap cleanup_utils EXIT
+
   check_prerequisites
   check_secret
+  copy_utils
   sam_build
   sam_deploy
   post_deploy_check

@@ -4,10 +4,6 @@
 version = 0.1
 
 # --- asken-garmin-sync ---------------------------------------------------
-# NOTE: SAM CLI >= 1.111.0 is required (RequirementsFile support).
-#   template-garmin.yaml / template-mfp.yaml use Metadata.BuildProperties.RequirementsFile.
-#   Older SAM CLI ignores RequirementsFile, causing ImportError at Lambda startup.
-#   Check: sam --version  / Upgrade: pip install --upgrade aws-sam-cli
 [default.global.parameters]
 stack_name = "asken-garmin-sync"
 region = "ap-northeast-1"
