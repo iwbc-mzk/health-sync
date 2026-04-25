@@ -23,9 +23,9 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 SHARED_FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
 TARGET_DATE = date(2026, 4, 18)
-BREAKFAST_URL = _ADVICE_URL.format(date=TARGET_DATE.isoformat(), meal_id=1)
-LUNCH_URL = _ADVICE_URL.format(date=TARGET_DATE.isoformat(), meal_id=2)
-DINNER_URL = _ADVICE_URL.format(date=TARGET_DATE.isoformat(), meal_id=3)
+BREAKFAST_URL = _ADVICE_URL.format(date=TARGET_DATE.isoformat(), meal_id=3)
+LUNCH_URL = _ADVICE_URL.format(date=TARGET_DATE.isoformat(), meal_id=4)
+DINNER_URL = _ADVICE_URL.format(date=TARGET_DATE.isoformat(), meal_id=5)
 DAILY_URL = _ADVICE_DAILY_URL.format(date=TARGET_DATE.isoformat())
 
 
@@ -218,7 +218,7 @@ class TestGetDailyMeals:
             '<html><body><a href="/login/logout">ログアウト</a>'
             '<ul class="nutrient_list">'
             '<li class="line_left"><ul><li class="title">エネルギー</li><li class="val">1850kcal</li></ul></li>'
-            '<li class="line_left"><ul><li class="title">たんぱく質</li><li class="val">85.5g</li></ul></li>'
+            '<li class="line_left"><ul><li class="title">タンパク質</li><li class="val">85.5g</li></ul></li>'
             '<li class="line_left"><ul><li class="title">脂質</li><li class="val">53.0g</li></ul></li>'
             '<li class="line_left"><ul><li class="title">炭水化物</li><li class="val">240.0g</li></ul></li>'
             "</ul></body></html>"

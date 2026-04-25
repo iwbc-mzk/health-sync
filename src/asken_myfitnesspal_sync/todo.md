@@ -51,7 +51,7 @@
 ## Phase 4: あすけんクライアント
 
 - [x] 4.1 **あすけんサイト調査**（食事ページの HTML 構造を確認）
-  - URL: `/wsp/advice/{date}/{meal_id}`（朝食=1, 昼食=2, 夕食=3）、1日合計: `/wsp/advice/{date}`
+  - URL: `/wsp/advice/{date}/{meal_id}`（朝食=3, 昼食=4, 夕食=5）、1日合計: `/wsp/advice/{date}`
   - HTML: `<li class="line_left">` 内の `<li class="title">` + `<li class="val">`
   - 欠食判定: "食事記録が無いため" テキストの存在確認
   - 間食 = 1日合計 - 朝食 - 昼食 - 夕食（差分計算）

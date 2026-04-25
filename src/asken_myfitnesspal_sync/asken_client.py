@@ -27,15 +27,15 @@ _ADVICE_DAILY_URL = f"{_BASE_URL}/wsp/advice/{{date}}"
 
 # あすけんの食事区分 ID（アドバイス URL のパス末尾）
 _MEAL_ADVICE_IDS: dict[MealType, int] = {
-    MealType.BREAKFAST: 1,
-    MealType.LUNCH: 2,
-    MealType.DINNER: 3,
+    MealType.BREAKFAST: 3,
+    MealType.LUNCH: 4,
+    MealType.DINNER: 5,
 }
 
 # アドバイスページの栄養素名（日本語）→ MealNutrition フィールド名
 _NUTRITION_FIELDS: dict[str, str] = {
     "エネルギー": "calories",
-    "たんぱく質": "protein_g",
+    "タンパク質": "protein_g",
     "脂質": "fat_g",
     "炭水化物": "carbs_g",
 }
