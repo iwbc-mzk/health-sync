@@ -139,3 +139,117 @@ SAM は CodeUri ディレクトリ直下の `requirements.txt`（固定名）の
   - `meal_name` は `nutrition.meal_type.value` を直接使用（MealType.value = "Breakfast"/"Lunch"/"Dinner"/"Snacks"）
 - `_get_diary_items` から `types=food_entry` パラメータを削除（quick_add エントリも GET で取得できるよう）
 - テストを新フローに合わせて全面更新（43テスト、全 PASS）
+
+---
+
+## 2026-04-25 — MFP 食事エントリ重複登録の修正（Web スクレイピング方式への移行）
+
+### 問題
+`/v2/diary` GET API が quick_add タイプのエントリを返さないため、既存エントリの重複検出が機能せず、同じ食事データが毎回追加で登録されていた。
+
+### 変更内容
+
+#### `src/asken_myfitnesspal_sync/myfitnesspal_client.py`
+- `_get_diary_items()` メソッド（`GET /api.myfitnesspal.com/v2/diary`）を削除
+- `_DiaryWebEntry` dataclass を追加（Web スクレイピングで取得した1エントリを表す）
+- `_MEAL_POSITION_FROM_HEADER` マッピング追加（英語・日本語セクション名 → meal_position）
+- `_DIARY_WEB_URL` 定数追加（`https://www.myfitnesspal.com/ja/food/diary`）
+- `_cell_float()` ヘルパー追加（td のテキストを float に変換）
+- `_scrape_diary_page()` メソッド追加:
+  - `table.main-title-2` を BeautifulSoup で解析
+  - `<meta name="csrf-token">` から CSRF トークン取得
+  - 各エントリの remove_path と栄養値を取得
+  - `table.main-title-2` が0件の場合は WARNING ログ + 空リスト早期 return（HTML 構造変更検知）
+- `get_meal_entries()` を `_scrape_diary_page()` 使用に変更
+- `delete_meal_entries()` を変更:
+  - `_scrape_diary_page()` で remove URL を取得
+  - `POST /{remove_path}` で削除（`X-CSRF-Token` ヘッダー付き、`allow_redirects=False`）
+  - 200/204/302 を成功として扱う（302 はリダイレクト前の応答）
+- `cast` 未使用 import を削除
+
+#### `tests/asken_myfitnesspal_sync/test_myfitnesspal_client.py`
+- `TestScrapeDiaryPage` 新規追加（13テスト）
+- `TestGetMealEntries`、`TestDeleteMealEntries` を Web スクレイピングモックに全面更新
+- `_build_diary_page_html()` / `_add_diary_page_mock()` テストヘルパー追加
+
+#### `tests/asken_myfitnesspal_sync/fixtures/mfp_diary_page.html`
+- 4食事セクション（Breakfast×2、Lunch×1、Dinner×0、Snacks×1）を含む新規フィクスチャ
+
+### テスト結果
+307 テスト全パス（evaluator: PASS）
+
+### 重要事項
+- `allow_redirects=False` を削除 POST に付けることで、MFP がリダイレクト前に返す 302 を正しく受け取る
+- 英語・日本語のセクション名に対応（`_MEAL_POSITION_FROM_HEADER`）
+
+---
+
+## 2026-04-26 — MFP セッショントークン無効化対策（Tier 1）
+
+### 背景
+MFP セッションクッキー (`__Secure-next-auth.session-token`) が毎日〜数日に1回無効化される問題。
+2時間間隔に伸ばしても解消せず、頻度のみが原因ではないと判断。
+
+### 方針
+TLS 指紋偽装等のグレー対策は採用せず、「実ブラウザに近づける」Tier 1 対策のみ実施。
+計画ファイル: `/home/node/.claude/plans/myfitnesspal-fluffy-conway.md`
+
+### 変更内容
+
+#### `src/asken_myfitnesspal_sync/myfitnesspal_client.py`
+- ブラウザヘッダー全面拡充 (Chrome 131 UA + Sec-Fetch-* + Sec-Ch-Ua-* + Accept-Language 等)
+- 認証フローを「Cookie → diary GET (warm-up) → auth_token GET」に変更
+  - `?refresh=true` クエリ撤廃（毎回リフレッシュは bot 検出シグナル）
+  - diary HTML を `_diary_cache: dict[date, ...]` にキャッシュ、書き込み後 try/finally で破棄
+- POST に Origin / Referer / Sec-Fetch-* を付与（`add_meal_entry`, `delete_meal_entries`）
+- 失効検知の集中化: `_mfp_request_with_retry` で 401/403 → `MfpAuthError` を一元処理
+- 200 OK でも login redirect / Cloudflare チャレンジ HTML を検出する `_raise_if_unauthenticated_html`
+- `_api_headers(target_date)` / `_form_post_headers(target_date)` 引数化（init 時の date と書き込み時の date 不整合を解消）
+- `MyFitnessPalClient(cookie, target_date)` シグネチャに変更
+
+#### `src/asken_myfitnesspal_sync/sync.py`
+- あすけんが当日の食事データを 0 件返した場合は MFP 認証もスキップ（`MyFitnessPalClient` を構築しない）
+
+#### `src/asken_myfitnesspal_sync/handler.py`
+- `MfpAuthError` 捕捉 → `_notify_mfp_auth_failure` で SNS publish → 再 raise
+- boto3 SNS クライアントの遅延シングルトン
+- SNS publish 失敗は logger.exception でログ出力して swallow（二重失敗回避）
+
+#### `template-mfp.yaml`
+- スケジュール: HourlySchedule (24/日) → MealTimesSchedule `cron(30 8,13,19)` JST (3/日) + DailySchedule (1/日)
+- 全スケジュールに `FlexibleTimeWindow: FLEXIBLE, MaximumWindowInMinutes: 10` を付与
+- `MaximumEventAgeInSeconds: 60 → 900`（jitter window と整合）
+- `MfpAuthAlertTopic` (SNS, KMS 暗号化) + Lambda IAM `sns:Publish` 権限 + 環境変数 `MFP_AUTH_ALERT_SNS_TOPIC_ARN`
+
+#### `pyproject.toml`
+- dev 依存に `boto3-stubs[secretsmanager,sns]` を追加
+
+#### テスト
+- `test_myfitnesspal_client.py`: 既存 `_API_URL` インポートエラーを修正、`_make_client(diary_html)` ヘルパー導入
+  - 新ヘッダー、新フロー、403/Cloudflare 検知、cache 動作、target_date 引数化を全網羅
+- `test_sync.py`: 欠食スキップ・MFP 構築引数の検証テスト追加
+- `test_handler.py`: SNS 通知経路テスト 4 件追加 (`TestMfpAuthFailureNotification`)
+
+### 検証結果
+- pytest: 326 全パス、警告 0 件
+- ruff: All checks passed
+- mypy: Success
+
+### evaluator 評価サイクル
+- 計 4 回の評価サイクルを実施。Critical 2 件・Major 10 件・Minor 多数を順次解消。
+- 4 回目で新たに指摘された Major 2 件（下記）はユーザー判断によりスコープ外・別タスク扱いとして本タスクを完了。
+
+### 別タスクとして残した Major 指摘
+- **Major A**: 丸め不一致による無限上書きループの可能性
+  - `add_meal_entry` の `round(calories)` / `round(_, 1)` と `_is_same_nutrition` の `is_nutritionally_equal(rel_tol=1e-5)` の不一致
+  - あすけん側に小数 2 桁以上の値が含まれる場合に毎回 delete→re-add がループする可能性
+  - 既存挙動であり今回の対策スコープ外。別タスクで `_is_same_nutrition` 比較側にも丸めポリシーを適用すること
+- **Major B**: 403 一律 MfpAuthError 化による過剰アラート
+  - CSRF 不一致 / WAF ソフトブロック等の一時的 403 でも即 SNS 通知してしまう
+  - ユーザー要求「失効を即時通知」と「誤検知耐性」のトレードオフ
+  - 別タスクで「N 回連続 403 のみ MfpAuthError 化」「食事区分単位の WARNING に格下げ」等を検討
+
+### 重要事項
+- `_mfp_request_with_retry` の 401/403 集中処理により全 HTTP 経路でクッキー失効が検知される
+- diary HTML キャッシュは書き込み後（`add_meal_entry` / `delete_meal_entries`）に try/finally で破棄してドリフト回避
+- 本番運用後 1〜2 週間で失効頻度を観察し、改善されない場合は Tier 2（curl_cffi での TLS 指紋擬態）を再検討

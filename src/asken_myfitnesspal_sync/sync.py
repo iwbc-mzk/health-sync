@@ -66,9 +66,20 @@ def sync_meals(target_date: date, credentials: Credentials) -> MealSyncResult:
     result = MealSyncResult()
 
     asken_client = AskenClient(credentials.asken_email, credentials.asken_password)
-    mfp_client = MyFitnessPalClient(credentials.myfitnesspal_session_cookie)
-
     daily_meals = asken_client.get_daily_meals(target_date)
+
+    if not daily_meals.meals:
+        logger.info(
+            "あすけんに食事データがないため MyFitnessPal 連携をスキップします: %s",
+            target_date,
+        )
+        return result
+
+    # MFP 認証は必要時のみ行う（毎呼び出しの auth_token 取得が bot 検出を誘発するため）
+    mfp_client = MyFitnessPalClient(
+        credentials.myfitnesspal_session_cookie, target_date
+    )
+
     asken_by_type: dict[MealType, MealNutrition] = {m.meal_type: m for m in daily_meals.meals}
 
     for meal_type in MealType:

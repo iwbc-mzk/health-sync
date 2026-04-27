@@ -23,7 +23,7 @@ dev = [
     "moto[secretsmanager]",
     "ruff",
     "mypy",
-    "boto3-stubs[secretsmanager]",
+    "boto3-stubs[secretsmanager,sns]",
 ]
 
 [tool.setuptools.packages.find]

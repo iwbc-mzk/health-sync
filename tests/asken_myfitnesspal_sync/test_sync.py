@@ -154,6 +154,49 @@ class TestSyncMeals:
         assert result.registered == 0
         assert result.skipped == 0
 
+    def test_mfp_client_not_constructed_when_asken_empty(self):
+        """欠食日には MyFitnessPalClient を構築しない（MFP 認証 GET を発生させない）."""
+        asken_mock = MagicMock()
+        asken_mock.get_daily_meals.return_value = DailyMeals(date=_DATE, meals=[])
+        mfp_class_mock = MagicMock()
+
+        with (
+            patch(
+                "asken_myfitnesspal_sync.sync.AskenClient",
+                return_value=asken_mock,
+            ),
+            patch(
+                "asken_myfitnesspal_sync.sync.MyFitnessPalClient",
+                mfp_class_mock,
+            ),
+        ):
+            sync_meals(_DATE, _make_credentials())
+
+        mfp_class_mock.assert_not_called()
+
+    def test_mfp_client_constructed_with_target_date(self):
+        """MyFitnessPalClient は (cookie, target_date) で構築される."""
+        asken_mock = MagicMock()
+        asken_mock.get_daily_meals.return_value = DailyMeals(
+            date=_DATE, meals=[_BREAKFAST]
+        )
+        mfp_mock = self._make_mfp_mock()
+        mfp_class_mock = MagicMock(return_value=mfp_mock)
+
+        with (
+            patch(
+                "asken_myfitnesspal_sync.sync.AskenClient",
+                return_value=asken_mock,
+            ),
+            patch(
+                "asken_myfitnesspal_sync.sync.MyFitnessPalClient",
+                mfp_class_mock,
+            ),
+        ):
+            sync_meals(_DATE, _make_credentials(mfp_session_cookie="cookieA"))
+
+        mfp_class_mock.assert_called_once_with("cookieA", _DATE)
+
     def test_no_error_when_asken_has_no_data_and_mfp_would_error(self):
         """欠食時は MFP API を叩かないため MfpError が発生しても error_count に影響しない."""
         from asken_myfitnesspal_sync.myfitnesspal_client import MfpError
