@@ -62,6 +62,10 @@ _API_URL = _BASE_URL
 _DIARY_WEB_URL = f"{_BASE_URL}/ja/food/diary"
 
 # 実 Chrome 131 (Windows) と整合するベースヘッダー — 全リクエストに付与する
+# 注: Accept-Encoding は明示しない。requests/urllib3 が対応可能な値（gzip, deflate）を
+#     自動設定する。ブラウザに合わせて br や zstd を明示すると、当該パッケージ
+#     （brotli / zstandard）未導入のため requests が復号できず、response.text が
+#     圧縮バイナリ由来のゴミになり JSON パースに失敗する（cookie 失効と誤判定される）。
 _BROWSER_HEADERS: dict[str, str] = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -69,7 +73,6 @@ _BROWSER_HEADERS: dict[str, str] = {
         "Chrome/131.0.0.0 Safari/537.36"
     ),
     "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
-    "Accept-Encoding": "gzip, deflate, br, zstd",
     "Sec-Ch-Ua": '"Chromium";v="131", "Not_A Brand";v="24", "Google Chrome";v="131"',
     "Sec-Ch-Ua-Mobile": "?0",
     "Sec-Ch-Ua-Platform": '"Windows"',
