@@ -4,108 +4,118 @@
   <meta name="csrf-token" content="test_csrf_token_abc123">
 </head>
 <body>
-<!-- 朝食セクション: 2エントリ -->
-<table class="main-title-2">
-  <thead>
-    <tr>
-      <td class="first alt" colspan="2">Breakfast</td>
-      <td>Calories</td>
-      <td>Protein</td>
-      <td>Fat</td>
-      <td>Carbohydrates</td>
-    </tr>
-  </thead>
+<table class="table0" id="diary-table">
   <tbody>
+    <!-- 朝食セクション: 2エントリ -->
+    <tr class="meal_header">
+      <td class="first alt">Breakfast</td>
+      <td class="alt nutrient-column">カロリー<div class="subtitle">kcal</div></td>
+      <td class="alt nutrient-column">炭水化物<div class="subtitle">g</div></td>
+      <td class="alt nutrient-column">脂肪<div class="subtitle">g</div></td>
+      <td class="alt nutrient-column">タンパク質<div class="subtitle">g</div></td>
+      <td class="alt nutrient-column">ナトリウム<div class="subtitle">mg</div></td>
+      <td class="alt nutrient-column">糖分<div class="subtitle">g</div></td>
+    </tr>
     <tr>
+      <td class="first alt"><a href="/ja/food/quick_add/111">クイック追加, 1 serving(s)</a></td>
+      <td>400</td>
+      <td><span class="macro-value">50</span><span class="macro-percentage">-</span></td>
+      <td><span class="macro-value">10</span><span class="macro-percentage">-</span></td>
+      <td><span class="macro-value">20</span><span class="macro-percentage">-</span></td>
+      <td>0</td>
+      <td>0</td>
       <td class="delete">
-        <a rel="nofollow" data-method="delete" href="/ja/food/remove/111">
-          <i class="icon-minus-sign"></i>
-        </a>
+        <a rel="nofollow" data-method="delete" href="/ja/food/remove/111"><i class="icon-minus-sign"></i></a>
       </td>
-      <td class="main-title-2 first">Quick Add</td>
-      <td class="calories">400</td>
-      <td class="protein">20</td>
-      <td class="fat">10</td>
-      <td class="carbohydrates">50</td>
     </tr>
     <tr>
+      <td class="first alt"><a href="/ja/food/quick_add/112">クイック追加, 1 serving(s)</a></td>
+      <td>100</td>
+      <td><span class="macro-value">15</span><span class="macro-percentage">-</span></td>
+      <td><span class="macro-value">2</span><span class="macro-percentage">-</span></td>
+      <td><span class="macro-value">5</span><span class="macro-percentage">-</span></td>
+      <td>0</td>
+      <td>0</td>
       <td class="delete">
-        <a rel="nofollow" data-method="delete" href="/ja/food/remove/112">
-          <i class="icon-minus-sign"></i>
-        </a>
+        <a rel="nofollow" data-method="delete" href="/ja/food/remove/112"><i class="icon-minus-sign"></i></a>
       </td>
-      <td class="main-title-2 first">Another Food</td>
-      <td class="calories">100</td>
-      <td class="protein">5</td>
-      <td class="fat">2</td>
-      <td class="carbohydrates">15</td>
     </tr>
-  </tbody>
-</table>
-<!-- 昼食セクション: 1エントリ -->
-<table class="main-title-2">
-  <thead>
-    <tr>
-      <td class="first alt" colspan="2">Lunch</td>
-      <td>Calories</td>
-      <td>Protein</td>
-      <td>Fat</td>
-      <td>Carbohydrates</td>
+    <tr class="bottom">
+      <td class="first alt"><a class="add_food" href="#">フードを追加</a></td>
+      <td>500</td>
+      <td><span class="macro-value">65</span><span class="macro-percentage">-</span></td>
+      <td><span class="macro-value">12</span><span class="macro-percentage">-</span></td>
+      <td><span class="macro-value">25</span><span class="macro-percentage">-</span></td>
+      <td>0</td>
+      <td>0</td>
+      <td></td>
     </tr>
-  </thead>
-  <tbody>
+
+    <!-- 昼食セクション: 1エントリ -->
+    <tr class="meal_header"><td class="first alt">Lunch</td></tr>
     <tr>
+      <td class="first alt"><a href="/ja/food/quick_add/221">クイック追加, 1 serving(s)</a></td>
+      <td>600</td>
+      <td><span class="macro-value">70</span><span class="macro-percentage">-</span></td>
+      <td><span class="macro-value">15</span><span class="macro-percentage">-</span></td>
+      <td><span class="macro-value">30</span><span class="macro-percentage">-</span></td>
+      <td>0</td>
+      <td>0</td>
       <td class="delete">
-        <a rel="nofollow" data-method="delete" href="/ja/food/remove/221">
-          <i class="icon-minus-sign"></i>
-        </a>
+        <a rel="nofollow" data-method="delete" href="/ja/food/remove/221"><i class="icon-minus-sign"></i></a>
       </td>
-      <td class="main-title-2 first">Quick Add</td>
-      <td class="calories">600</td>
-      <td class="protein">30</td>
-      <td class="fat">15</td>
-      <td class="carbohydrates">70</td>
     </tr>
-  </tbody>
-</table>
-<!-- 夕食セクション: エントリなし -->
-<table class="main-title-2">
-  <thead>
-    <tr>
-      <td class="first alt" colspan="2">Dinner</td>
-      <td>Calories</td>
-      <td>Protein</td>
-      <td>Fat</td>
-      <td>Carbohydrates</td>
+    <tr class="bottom">
+      <td class="first alt"><a class="add_food" href="#">フードを追加</a></td>
+      <td>600</td>
+      <td><span class="macro-value">70</span><span class="macro-percentage">-</span></td>
+      <td><span class="macro-value">15</span><span class="macro-percentage">-</span></td>
+      <td><span class="macro-value">30</span><span class="macro-percentage">-</span></td>
+      <td>0</td>
+      <td>0</td>
+      <td></td>
     </tr>
-  </thead>
-  <tbody>
-  </tbody>
-</table>
-<!-- 間食セクション: 1エントリ -->
-<table class="main-title-2">
-  <thead>
-    <tr>
-      <td class="first alt" colspan="2">Snacks</td>
-      <td>Calories</td>
-      <td>Protein</td>
-      <td>Fat</td>
-      <td>Carbohydrates</td>
+
+    <!-- 夕食セクション: エントリなし -->
+    <tr class="meal_header"><td class="first alt">Dinner</td></tr>
+    <tr class="bottom">
+      <td class="first alt"><a class="add_food" href="#">フードを追加</a></td>
+      <td>&nbsp;</td>
+      <td><span class="macro-value">&nbsp;</span><span class="macro-percentage">&nbsp;</span></td>
+      <td><span class="macro-value">&nbsp;</span><span class="macro-percentage">&nbsp;</span></td>
+      <td><span class="macro-value">&nbsp;</span><span class="macro-percentage">&nbsp;</span></td>
+      <td>&nbsp;</td>
+      <td>&nbsp;</td>
+      <td></td>
     </tr>
-  </thead>
-  <tbody>
+
+    <!-- 間食セクション: 1エントリ -->
+    <tr class="meal_header"><td class="first alt">Snacks</td></tr>
     <tr>
+      <td class="first alt"><a href="/ja/food/quick_add/441">クイック追加, 1 serving(s)</a></td>
+      <td>200</td>
+      <td><span class="macro-value">30</span><span class="macro-percentage">-</span></td>
+      <td><span class="macro-value">5</span><span class="macro-percentage">-</span></td>
+      <td><span class="macro-value">8</span><span class="macro-percentage">-</span></td>
+      <td>0</td>
+      <td>0</td>
       <td class="delete">
-        <a rel="nofollow" data-method="delete" href="/ja/food/remove/441">
-          <i class="icon-minus-sign"></i>
-        </a>
+        <a rel="nofollow" data-method="delete" href="/ja/food/remove/441"><i class="icon-minus-sign"></i></a>
       </td>
-      <td class="main-title-2 first">Quick Add</td>
-      <td class="calories">200</td>
-      <td class="protein">8</td>
-      <td class="fat">5</td>
-      <td class="carbohydrates">30</td>
     </tr>
+    <tr class="bottom">
+      <td class="first alt"><a class="add_food" href="#">フードを追加</a></td>
+      <td>200</td>
+      <td><span class="macro-value">30</span><span class="macro-percentage">-</span></td>
+      <td><span class="macro-value">5</span><span class="macro-percentage">-</span></td>
+      <td><span class="macro-value">8</span><span class="macro-percentage">-</span></td>
+      <td>0</td>
+      <td>0</td>
+      <td></td>
+    </tr>
+
+    <tr class="spacer"><td class="first" colspan="6">&nbsp;</td><td class="empty">&nbsp;</td></tr>
+    <tr class="total"><td class="first">合計</td><td>1300</td></tr>
   </tbody>
 </table>
 </body>

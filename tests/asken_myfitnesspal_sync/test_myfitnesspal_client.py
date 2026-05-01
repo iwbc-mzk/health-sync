@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -37,43 +38,59 @@ def _build_diary_page_html(
     sections: dict[str, list[dict[str, Any]]] | None = None,
     csrf_token: str = "test_csrf_token",
 ) -> str:
-    """テスト用の MFP 日記ページ HTML を生成する."""
+    """テスト用の MFP 日記ページ HTML を生成する.
+
+    実 MFP の構造を模倣: 単一の <table id="diary-table"> 内で
+    <tr class="meal_header"> がセクション見出し、続くクラス無しの <tr> が食事エントリ。
+    """
     if sections is None:
         sections = {}
 
-    tables = []
+    body_rows: list[str] = []
     for meal_name, entries in sections.items():
-        rows = ""
+        body_rows.append(f"""
+<tr class="meal_header">
+  <td class="first alt">{meal_name}</td>
+</tr>""")
         for e in entries:
-            rows += f"""
-    <tr>
-      <td class="delete">
-        <a rel="nofollow" data-method="delete" href="/ja/food/remove/{e['id']}">
-          <i class="icon-minus-sign"></i>
-        </a>
-      </td>
-      <td class="main-title-2 first">Quick Add</td>
-      <td class="calories">{e['calories']}</td>
-      <td class="protein">{e['protein']}</td>
-      <td class="fat">{e['fat']}</td>
-      <td class="carbohydrates">{e['carbs']}</td>
-    </tr>"""
-        tables.append(f"""
-<table class="main-title-2">
-  <thead>
-    <tr>
-      <td class="first alt" colspan="2">{meal_name}</td>
-    </tr>
-  </thead>
-  <tbody>{rows}
-  </tbody>
-</table>""")
+            body_rows.append(f"""
+<tr>
+  <td class="first alt"><a href="/ja/food/quick_add/{e['id']}">クイック追加, 1 serving(s)</a></td>
+  <td>{e['calories']}</td>
+  <td><span class="macro-value">{e['carbs']}</span><span class="macro-percentage">-</span></td>
+  <td><span class="macro-value">{e['fat']}</span><span class="macro-percentage">-</span></td>
+  <td><span class="macro-value">{e['protein']}</span><span class="macro-percentage">-</span></td>
+  <td>0</td>
+  <td>0</td>
+  <td class="delete">
+    <a rel="nofollow" data-method="delete" href="/ja/food/remove/{e['id']}">
+      <i class="icon-minus-sign"></i>
+    </a>
+  </td>
+</tr>""")
+        # bottom 行（フードを追加 / 合計）— 削除リンクなしなのでパース時に無視される
+        body_rows.append("""
+<tr class="bottom">
+  <td class="first alt"><a class="add_food" href="#">フードを追加</a></td>
+  <td>0</td>
+  <td><span class="macro-value">0</span><span class="macro-percentage">-</span></td>
+  <td><span class="macro-value">0</span><span class="macro-percentage">-</span></td>
+  <td><span class="macro-value">0</span><span class="macro-percentage">-</span></td>
+  <td>0</td>
+  <td>0</td>
+  <td></td>
+</tr>""")
 
     return f"""<!DOCTYPE html>
 <html><head>
   <meta name="csrf-token" content="{csrf_token}">
 </head><body>
-{''.join(tables)}
+<table class="table0" id="diary-table">
+  <tbody>{''.join(body_rows)}
+    <tr class="spacer"><td class="first" colspan="6">&nbsp;</td><td class="empty">&nbsp;</td></tr>
+    <tr class="total"><td class="first">合計</td><td>0</td></tr>
+  </tbody>
+</table>
 </body></html>"""
 
 
@@ -404,7 +421,9 @@ class TestScrapeDiaryPage:
     @responses_lib.activate
     def test_scrape_no_csrf_meta_returns_empty_string(self) -> None:
         """CSRF meta タグがない場合は空文字列を返すこと."""
-        html = "<html><head></head><body></body></html>"
+        html = """<html><head></head><body>
+<table class="table0" id="diary-table"><tbody></tbody></table>
+</body></html>"""
         client = _make_client(html)
 
         _, csrf_token = client._scrape_diary_page(TARGET_DATE)
@@ -442,6 +461,73 @@ class TestScrapeDiaryPage:
         assert positions["4"] == 3  # 間食
 
     @responses_lib.activate
+    def test_scrape_table_missing_raises_mfp_error(self) -> None:
+        """table#diary-table が見つからない場合 MfpError を送出すること.
+
+        空リスト返却にすると sync.py 側で「既存 0 件」と解釈され、削除を経ずに登録のみ
+        実行され重複データが生まれるため、構造変化は MfpError に昇格させる必要がある。
+        """
+        html = '<html><head><meta name="csrf-token" content="t"></head><body>No table here</body></html>'
+        client = _make_client(html)
+
+        with pytest.raises(MfpError, match="diary-table"):
+            client._scrape_diary_page(TARGET_DATE)
+
+    @responses_lib.activate
+    def test_scrape_entry_before_meal_header_is_ignored(self) -> None:
+        """meal_header より前に出現するエントリ行は無視されること（current_meal_pos 安全装置の回帰防止）."""
+        html = """<!DOCTYPE html>
+<html><head><meta name="csrf-token" content="tok"></head>
+<body>
+<table class="table0" id="diary-table">
+  <tbody>
+    <tr>
+      <td class="first alt"><a href="#">Orphan</a></td>
+      <td>999</td>
+      <td><span class="macro-value">99</span></td>
+      <td><span class="macro-value">99</span></td>
+      <td><span class="macro-value">99</span></td>
+      <td>0</td>
+      <td>0</td>
+      <td class="delete">
+        <a rel="nofollow" data-method="delete" href="/ja/food/remove/orphan"></a>
+      </td>
+    </tr>
+    <tr class="meal_header"><td class="first alt">Breakfast</td></tr>
+    <tr>
+      <td class="first alt"><a href="#">Real</a></td>
+      <td>300</td>
+      <td><span class="macro-value">40</span></td>
+      <td><span class="macro-value">8</span></td>
+      <td><span class="macro-value">15</span></td>
+      <td>0</td>
+      <td>0</td>
+      <td class="delete">
+        <a rel="nofollow" data-method="delete" href="/ja/food/remove/real"></a>
+      </td>
+    </tr>
+  </tbody>
+</table>
+</body></html>"""
+        client = _make_client(html)
+
+        entries, _ = client._scrape_diary_page(TARGET_DATE)
+        assert len(entries) == 1
+        assert entries[0].remove_path == "/ja/food/remove/real"
+
+    @responses_lib.activate
+    def test_scrape_oyatsu_kanshoku_header_maps_to_snacks(self) -> None:
+        """実 MFP 日本語ロケールのヘッダー "おやつ・間食" が Snacks (3) にマップされること."""
+        html = _build_diary_page_html({
+            "おやつ・間食": [{"id": "1", "calories": 200, "protein": 8, "fat": 5, "carbs": 30}]
+        })
+        client = _make_client(html)
+
+        entries, _ = client._scrape_diary_page(TARGET_DATE)
+        assert len(entries) == 1
+        assert entries[0].meal_position == 3
+
+    @responses_lib.activate
     def test_scrape_unknown_section_is_ignored(self) -> None:
         """未知のセクション名は無視されること."""
         html = _build_diary_page_html({
@@ -456,27 +542,34 @@ class TestScrapeDiaryPage:
 
     @responses_lib.activate
     def test_scrape_row_without_delete_link_is_ignored(self) -> None:
-        """削除リンクのない行（合計行等）は無視されること."""
+        """削除リンクのない行（bottom / spacer / total 等）は無視されること."""
         html = """<!DOCTYPE html>
 <html><head><meta name="csrf-token" content="tok"></head>
 <body>
-<table class="main-title-2">
-  <thead><tr><td class="first alt">Breakfast</td></tr></thead>
+<table class="table0" id="diary-table">
   <tbody>
+    <tr class="meal_header"><td class="first alt">Breakfast</td></tr>
     <tr>
+      <td class="first alt"><a href="#">Quick Add</a></td>
+      <td>300</td>
+      <td><span class="macro-value">40</span><span class="macro-percentage">-</span></td>
+      <td><span class="macro-value">8</span><span class="macro-percentage">-</span></td>
+      <td><span class="macro-value">15</span><span class="macro-percentage">-</span></td>
+      <td>0</td>
+      <td>0</td>
       <td class="delete">
         <a rel="nofollow" data-method="delete" href="/ja/food/remove/10">
           <i class="icon-minus-sign"></i>
         </a>
       </td>
-      <td class="calories">300</td>
-      <td class="protein">15</td>
-      <td class="fat">8</td>
-      <td class="carbohydrates">40</td>
+    </tr>
+    <tr class="bottom">
+      <td class="first alt"><a class="add_food" href="#">フードを追加</a></td>
+      <td>300</td>
     </tr>
     <tr class="total">
-      <td colspan="2">Total</td>
-      <td class="calories">300</td>
+      <td class="first">合計</td>
+      <td>300</td>
     </tr>
   </tbody>
 </table>
@@ -518,6 +611,49 @@ class TestScrapeDiaryPage:
         entries, _ = client._scrape_diary_page(other_date)
         assert len(entries) == 1
         assert entries[0].meal_position == 1
+
+    @responses_lib.activate
+    def test_scrape_unparseable_cell_logs_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """数値変換不能なセル（例: '20g' のような単位付き文字列）は WARNING を出して 0 を返すこと.
+
+        HTML 構造変化の早期検知のため、黙って 0 化するのではなく WARNING ログを残す。
+        """
+        html = """<!DOCTYPE html>
+<html><head><meta name="csrf-token" content="t"></head>
+<body>
+<table class="table0" id="diary-table">
+  <tbody>
+    <tr class="meal_header"><td class="first alt">Breakfast</td></tr>
+    <tr>
+      <td class="first alt"><a href="#">X</a></td>
+      <td>300</td>
+      <td><span class="macro-value">40g</span></td>
+      <td><span class="macro-value">8</span></td>
+      <td><span class="macro-value">15</span></td>
+      <td>0</td>
+      <td>0</td>
+      <td class="delete">
+        <a rel="nofollow" data-method="delete" href="/ja/food/remove/abc"></a>
+      </td>
+    </tr>
+  </tbody>
+</table>
+</body></html>"""
+        client = _make_client(html)
+
+        with caplog.at_level(
+            logging.WARNING, logger="asken_myfitnesspal_sync.myfitnesspal_client"
+        ):
+            entries, _ = client._scrape_diary_page(TARGET_DATE)
+
+        assert len(entries) == 1
+        assert entries[0].carbs == 0.0
+        assert any(
+            "数値変換に失敗" in rec.getMessage() and "40g" in rec.getMessage()
+            for rec in caplog.records
+        )
 
     @responses_lib.activate
     def test_scrape_comma_separated_values_parsed(self) -> None:
@@ -903,8 +1039,13 @@ class TestDeleteMealEntries:
         client.delete_meal_entries(TARGET_DATE, MealType.BREAKFAST)
 
     @responses_lib.activate
-    def test_delete_meal_entries_sends_csrf_and_referer_headers(self) -> None:
-        """削除リクエストに X-CSRF-Token と Referer ヘッダーが含まれること."""
+    def test_delete_meal_entries_sends_form_body_and_navigate_headers(self) -> None:
+        """削除リクエストはブラウザ的フォームナビゲーション形式で送られること.
+
+        - body は application/x-www-form-urlencoded で `_method=delete&authenticity_token=...`
+        - CSRF はヘッダではなく body の authenticity_token として送る
+        - Accept は HTML、Sec-Fetch-Mode は navigate（XHR 風送信は MFP に 406 を返される）
+        """
         html = _build_diary_page_html(
             {"Breakfast": [{"id": "e5", "calories": 400, "protein": 20, "fat": 10, "carbs": 50}]},
             csrf_token="my_csrf_abc",
@@ -912,9 +1053,14 @@ class TestDeleteMealEntries:
         client = _make_client(html)
 
         sent_headers: list[dict] = []
+        sent_bodies: list[str] = []
 
         def _capture(request):  # type: ignore[no-untyped-def]
             sent_headers.append(dict(request.headers))
+            body = request.body
+            if isinstance(body, bytes):
+                body = body.decode("utf-8")
+            sent_bodies.append(body or "")
             return 200, {}, ""
 
         responses_lib.add_callback(
@@ -923,24 +1069,36 @@ class TestDeleteMealEntries:
 
         client.delete_meal_entries(TARGET_DATE, MealType.BREAKFAST)
         h = sent_headers[0]
-        assert h.get("X-CSRF-Token") == "my_csrf_abc"
-        assert TARGET_DATE.isoformat() in h.get("Referer", "")
-        assert h.get("Origin") == _BASE_URL
+        assert "X-CSRF-Token" not in h
+        assert "X-Requested-With" not in h
+        assert h.get("Content-Type", "").startswith("application/x-www-form-urlencoded")
+        assert h.get("Accept", "").startswith("text/html")
+        assert h.get("Sec-Fetch-Mode") == "navigate"
+        assert h.get("Sec-Fetch-Dest") == "document"
         assert h.get("Sec-Fetch-Site") == "same-origin"
+        assert h.get("Origin") == _BASE_URL
+        assert TARGET_DATE.isoformat() in h.get("Referer", "")
+
+        body = sent_bodies[0]
+        assert "_method=delete" in body
+        assert "authenticity_token=my_csrf_abc" in body
 
     @responses_lib.activate
-    def test_delete_meal_entries_no_csrf_sends_no_header(self) -> None:
-        """CSRF トークンがない場合は X-CSRF-Token ヘッダーを送らないこと."""
+    def test_delete_meal_entries_no_csrf_omits_token_field(self) -> None:
+        """CSRF トークンがない場合は authenticity_token フィールドを含めないこと."""
         html = _build_diary_page_html(
             {"Breakfast": [{"id": "e6", "calories": 400, "protein": 20, "fat": 10, "carbs": 50}]},
             csrf_token="",
         )
         client = _make_client(html)
 
-        sent_headers: list[dict] = []
+        sent_bodies: list[str] = []
 
         def _capture(request):  # type: ignore[no-untyped-def]
-            sent_headers.append(dict(request.headers))
+            body = request.body
+            if isinstance(body, bytes):
+                body = body.decode("utf-8")
+            sent_bodies.append(body or "")
             return 200, {}, ""
 
         responses_lib.add_callback(
@@ -948,7 +1106,55 @@ class TestDeleteMealEntries:
         )
 
         client.delete_meal_entries(TARGET_DATE, MealType.BREAKFAST)
-        assert "X-CSRF-Token" not in sent_headers[0]
+        body = sent_bodies[0]
+        assert "_method=delete" in body
+        assert "authenticity_token" not in body
+
+    @responses_lib.activate
+    def test_delete_meal_entries_warns_when_csrf_missing(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """CSRF が空のまま削除送信する場合 WARNING を出すこと.
+
+        Rails の CSRF 検証で拒否される可能性があるため、HTML 構造変化 / セッション異常の
+        早期検知用に warning を出す。
+        """
+        html = _build_diary_page_html(
+            {"Breakfast": [{"id": "e7", "calories": 400, "protein": 20, "fat": 10, "carbs": 50}]},
+            csrf_token="",
+        )
+        client = _make_client(html)
+        responses_lib.add(
+            responses_lib.POST, f"{_BASE_URL}/ja/food/remove/e7", status=200
+        )
+
+        with caplog.at_level(
+            logging.WARNING, logger="asken_myfitnesspal_sync.myfitnesspal_client"
+        ):
+            client.delete_meal_entries(TARGET_DATE, MealType.BREAKFAST)
+
+        assert any(
+            "CSRF トークンが空のまま" in rec.getMessage()
+            for rec in caplog.records
+        )
+
+    @responses_lib.activate
+    def test_delete_meal_entries_no_warning_when_no_entries(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """対象食事区分にエントリが無い場合は CSRF 空でも警告しないこと（送信自体しないため）."""
+        html = _build_diary_page_html({"Lunch": []}, csrf_token="")
+        client = _make_client(html)
+
+        with caplog.at_level(
+            logging.WARNING, logger="asken_myfitnesspal_sync.myfitnesspal_client"
+        ):
+            client.delete_meal_entries(TARGET_DATE, MealType.BREAKFAST)
+
+        assert not any(
+            "CSRF トークンが空のまま" in rec.getMessage()
+            for rec in caplog.records
+        )
 
     @responses_lib.activate
     def test_delete_meal_entries_uses_correct_remove_url(self) -> None:

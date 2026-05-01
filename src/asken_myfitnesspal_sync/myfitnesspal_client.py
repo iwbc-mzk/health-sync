@@ -15,9 +15,16 @@
 
 ### 食事エントリ取得 (Web スクレイピング、認証時取得 HTML を再利用)
 GET https://www.myfitnesspal.com/ja/food/diary?date=YYYY-MM-DD
-- 各食事セクション（Breakfast/Lunch/Dinner/Snacks）の table.main-title-2 を解析
-- 削除ボタン: <a data-method="delete" href="/ja/food/remove/{id}">
-- 栄養値: <td class="calories">, <td class="protein">, <td class="fat">, <td class="carbohydrates">
+- 単一の <table id="diary-table"> 内で、<tr class="meal_header"> が食事区分の見出し
+  （td.first のテキスト: 朝食 / 昼食 / 夕食 / おやつ・間食 — 英語ロケールでは
+  Breakfast / Lunch / Dinner / Snacks）。直後に続くクラス無しの <tr> が食事エントリ。
+- 削除ボタン: 各エントリ行の <td class="delete"> 内 <a data-method="delete" href="/ja/food/remove/{id}">
+- 栄養値: 列順で取得する（td 直接の子。クラスは付与されていない）
+    [0]名前 [1]カロリー [2]炭水化物 [3]脂質 [4]タンパク質 [5]ナトリウム [6]糖分 [7]削除
+  炭水化物・脂質・タンパク質の td は <span class="macro-value"> を含む（その値を採用）。
+- bottom / spacer / total 系の <tr> は削除リンクを持たないため自動的に除外される。
+- 本スクリプト以外で MFP に手動登録することはない前提なので、検出した全エントリは
+  当ツールが登録したものとして扱う（差分があれば全削除→再登録）。
 
 ### 食事エントリ登録 API (クイックツール, POST)
 POST https://www.myfitnesspal.com/api/services/diary
@@ -30,7 +37,12 @@ Response: 200 or 201
 
 ### 食事エントリ削除 (Web フォーム, POST)
 POST https://www.myfitnesspal.com/ja/food/remove/{id}
-Headers: X-CSRF-Token, X-Requested-With, Origin / Referer / Sec-Fetch-*
+- Content-Type: application/x-www-form-urlencoded
+- Body: `_method=delete&authenticity_token={csrf_token}`（Rails 準拠の DELETE エミュレーション）
+- Headers: Accept: text/html..., Origin, Referer, Sec-Fetch-Mode: navigate,
+  Sec-Fetch-Dest: document, Sec-Fetch-User: ?1, Upgrade-Insecure-Requests: 1
+  注: XHR 風（Accept: */*, X-Requested-With: XMLHttpRequest, Sec-Fetch-Mode: cors,
+  CSRF をヘッダ送信）にすると 406 Not Acceptable になる
 Response: 200, 204, or 302
 
 ### 注意事項
@@ -102,13 +114,23 @@ _API_FETCH_HEADERS: dict[str, str] = {
 }
 
 # Rails 系フォーム POST（/food/remove）用ヘッダー
+# 実ブラウザは <form method="post"> の通常ナビゲーションとして送信する。
+# XHR 風（Accept: */*, X-Requested-With: XMLHttpRequest, Sec-Fetch-Mode: cors）で送ると
+# サーバが 406 Not Acceptable を返す。HTML ナビゲーションを忠実に模倣する必要がある。
+# CSRF はヘッダではなく form body の `authenticity_token` フィールドで送る。
 _FORM_POST_HEADERS: dict[str, str] = {
-    "Accept": "*/*",
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "image/avif,image/webp,image/apng,*/*;q=0.8,"
+        "application/signed-exchange;v=b3;q=0.7"
+    ),
+    "Content-Type": "application/x-www-form-urlencoded",
     "Origin": _BASE_URL,
     "Sec-Fetch-Site": "same-origin",
-    "Sec-Fetch-Mode": "cors",
-    "Sec-Fetch-Dest": "empty",
-    "X-Requested-With": "XMLHttpRequest",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
 }
 
 _MEAL_POSITIONS: dict[MealType, int] = {
@@ -119,6 +141,7 @@ _MEAL_POSITIONS: dict[MealType, int] = {
 }
 
 # 食事セクションヘッダーテキスト → meal_position マッピング（英語・日本語両対応）
+# 日本語ロケールでは "おやつ・間食"（実 HTML の表示文字列）。
 _MEAL_POSITION_FROM_HEADER: dict[str, int] = {
     "Breakfast": 0,
     "朝食": 0,
@@ -128,6 +151,7 @@ _MEAL_POSITION_FROM_HEADER: dict[str, int] = {
     "夕食": 2,
     "Snacks": 3,
     "間食": 3,
+    "おやつ・間食": 3,
 }
 
 
@@ -228,15 +252,30 @@ def _mfp_request_with_retry(
     raise MfpError("リトライ上限に達しました")  # unreachable
 
 
-def _cell_float(row: Any, css_class: str) -> float:
-    """テーブル行から指定クラスの td の数値を取得する."""
-    td = row.select_one(f"td.{css_class}")
-    if not td:
+def _cell_float(td: Any) -> float:
+    """日記テーブルの 1 セルから数値を取得する.
+
+    マクロ栄養素のセル（炭水化物・脂質・タンパク質）は
+    <td><span class="macro-value">N</span><span class="macro-percentage">%</span></td>
+    の構造。span.macro-value があればそちらを優先し、なければ td 全体のテキストを使う
+    （カロリー / ナトリウム / 糖分の列向け）。
+
+    数値変換に失敗した場合は WARNING ログを出して 0.0 を返す（HTML 構造変化の早期検知）。
+    """
+    if td is None:
         return 0.0
-    text = td.get_text(strip=True).replace(",", "").strip()
+    macro = td.select_one("span.macro-value")
+    text = (macro.get_text(strip=True) if macro else td.get_text(strip=True))
+    text = text.replace(",", "").replace("\xa0", "").strip()
+    if not text or text == "-":
+        return 0.0
     try:
-        return float(text) if text else 0.0
+        return float(text)
     except ValueError:
+        logger.warning(
+            "MFP 日記セルの数値変換に失敗しました（HTML 構造変化の可能性）: %r",
+            text,
+        )
         return 0.0
 
 
@@ -443,44 +482,72 @@ class MyFitnessPalClient:
         soup = BeautifulSoup(html, "lxml")
 
         entries: list[_DiaryWebEntry] = []
-        tables = soup.select("table.main-title-2")
+        diary_table = soup.select_one("table#diary-table")
 
-        if not tables:
-            logger.warning(
-                "日記ページに食事セクション（table.main-title-2）が見つかりませんでした。"
-                "MFP の HTML 構造が変更された可能性があります: %s",
-                target_date,
+        if not diary_table:
+            # 空リスト返却にすると sync.py 側で「既存 0 件」と解釈され、削除処理を経ずに
+            # add_meal_entry が走り MFP に重複データを生むため MfpError へ昇格させる。
+            raise MfpError(
+                "日記ページに食事テーブル（table#diary-table）が見つかりませんでした。"
+                f"MFP の HTML 構造が変更された可能性があります: {target_date}"
             )
-            return entries, csrf_token
 
-        for table in tables:
-            header_td = table.select_one("thead td.first, thead th.first")
-            if not header_td:
+        # tbody 直下の tr を順に走査し、meal_header を見つけた直後のクラス無し tr を
+        # 食事エントリとして扱う。bottom / spacer / total 系の tr は削除リンクを持たない
+        # ため、td.delete a[data-method='delete'] の有無で自然に除外される。
+        current_meal_pos: int | None = None
+        for row in diary_table.select("tbody > tr"):
+            row_classes: list[str] = list(row.get("class") or [])
+
+            if "meal_header" in row_classes:
+                header_td = row.select_one("td.first")
+                header_text = header_td.get_text(strip=True) if header_td else ""
+                current_meal_pos = _MEAL_POSITION_FROM_HEADER.get(header_text)
+                if current_meal_pos is None and header_text:
+                    # 未知のラベルは HTML 構造変化の早期検知のため WARNING に昇格
+                    logger.warning(
+                        "未知の食事セクション見出しを検出しました: %r", header_text)
                 continue
-            header_text = header_td.get_text(strip=True)
-            meal_pos = _MEAL_POSITION_FROM_HEADER.get(header_text)
-            if meal_pos is None:
-                logger.debug("未知の食事セクション: %s", header_text)
+
+            delete_link = row.select_one("td.delete a[data-method='delete']")
+            if not delete_link:
                 continue
-
-            for row in table.select("tbody tr"):
-                delete_link = row.select_one("a[data-method='delete']")
-                if not delete_link:
-                    continue
-                href = delete_link.get("href", "")
-                if not href or "/food/remove/" not in str(href):
-                    continue
-
-                entries.append(
-                    _DiaryWebEntry(
-                        remove_path=str(href),
-                        meal_position=meal_pos,
-                        calories=_cell_float(row, "calories"),
-                        protein=_cell_float(row, "protein"),
-                        fat=_cell_float(row, "fat"),
-                        carbs=_cell_float(row, "carbohydrates"),
-                    )
+            href = delete_link.get("href", "")
+            if not href or "/food/remove/" not in str(href):
+                logger.warning(
+                    "削除リンクの href が想定外でした（HTML 構造変化の可能性）: %r",
+                    href,
                 )
+                continue
+
+            if current_meal_pos is None:
+                # meal_header より前にエントリ行が現れるのは想定外。スキップせず警告で可視化する。
+                logger.warning(
+                    "食事区分が確定する前にエントリ行を検出しました（無視）: href=%r",
+                    href,
+                )
+                continue
+
+            cells = row.find_all("td", recursive=False)
+            # 列順: [0]名前 [1]カロリー [2]炭水化物 [3]脂質 [4]タンパク質 [5]ナトリウム [6]糖分 [7]削除
+            if len(cells) < 8:
+                logger.warning(
+                    "食事エントリ行の列数が想定（8）と異なります: %d 列 (href=%r)",
+                    len(cells),
+                    href,
+                )
+                continue
+
+            entries.append(
+                _DiaryWebEntry(
+                    remove_path=str(href),
+                    meal_position=current_meal_pos,
+                    calories=_cell_float(cells[1]),
+                    carbs=_cell_float(cells[2]),
+                    fat=_cell_float(cells[3]),
+                    protein=_cell_float(cells[4]),
+                )
+            )
 
         if not entries:
             logger.debug("日記ページにエントリが見つかりませんでした: %s", target_date)
@@ -569,6 +636,14 @@ class MyFitnessPalClient:
         remove_paths = [
             e.remove_path for e in entries if e.meal_position == meal_position]
 
+        # CSRF（authenticity_token）が空のままだと Rails が CSRF 検証で拒否する。
+        # 削除リクエスト送信前に可視化しておく（HTML 構造変化 / セッション異常の早期検知）。
+        if remove_paths and not csrf_token:
+            logger.warning(
+                "CSRF トークンが空のまま削除リクエストを送ります。"
+                "MFP 側で拒否される可能性があります（meta[name=csrf-token] 不在の可能性）"
+            )
+
         # 途中失敗時は MfpError を送出する（一部削除済みの可能性あり）。
         # 呼び出し元 sync.py は食事区分単位でエラーを WARNING に留め、
         # 当該区分のみ登録をスキップするため不整合は最小限に抑えられる。
@@ -576,13 +651,17 @@ class MyFitnessPalClient:
         try:
             for remove_path in remove_paths:
                 headers = self._form_post_headers(target_date)
+                # ブラウザ実装は HTML フォームナビゲーション。CSRF は body の
+                # authenticity_token、Rails が DELETE を解釈するため _method=delete を送る。
+                form_data: dict[str, str] = {"_method": "delete"}
                 if csrf_token:
-                    headers["X-CSRF-Token"] = csrf_token
+                    form_data["authenticity_token"] = csrf_token
 
                 resp = _mfp_request_with_retry(
                     self._session.post,
                     f"{_BASE_URL}{remove_path}",
                     headers=headers,
+                    data=form_data,
                     allow_redirects=False,
                     timeout=30,
                 )
