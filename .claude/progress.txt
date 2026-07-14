@@ -253,3 +253,29 @@ TLS 指紋偽装等のグレー対策は採用せず、「実ブラウザに近�
 - `_mfp_request_with_retry` の 401/403 集中処理により全 HTTP 経路でクッキー失効が検知される
 - diary HTML キャッシュは書き込み後（`add_meal_entry` / `delete_meal_entries`）に try/finally で破棄してドリフト回避
 - 本番運用後 1〜2 週間で失効頻度を観察し、改善されない場合は Tier 2（curl_cffi での TLS 指紋擬態）を再検討
+
+## 2026-07-14 — あすけんログインフォーム HTML 構造変更対応
+
+### 問題
+あすけんのログインフォームが CakePHP 2.x → 3.x+ 形式へ移行し、既存のログイン処理がエラーになった。
+
+### 対応（src/utils/asken_base_client.py の _login）
+- フォーム識別: `id="indexForm"` → `<div id="login">` 内の form を取得（form に id なし）
+- CSRF トークン: `data[_Token][key]` → `_csrfToken`
+- フィールド名: `data[CustomerMember][email]` 等 → `CustomerMember[email]` 等（`data[...]` ラッパー廃止）
+- POST 先: フォームの action 属性（`/login`、末尾スラッシュなし）から urljoin で導出
+- テスト更新: fixtures/login_page.html を新構造化。POST ペイロードのキー名を検証する回帰テストを2件追加
+  （test_login_posts_new_form_field_names / test_login_posts_new_form_fields）
+
+### 検証
+- pytest tests/: 334 passed / ruff: OK / mypy: Success
+- evaluator: PASS（旧形式へ巻き戻すと追加テストが FAILED になることを確認済み）
+
+### ⚠️ 未解決リスク（要ユーザー確認・別タスク）
+- **body-composition 解析が同様に壊れている可能性**
+  - src/asken_garmin_sync/asken_client.py:64-65 は依然 CakePHP 2.x 形式 `data[Body][weight]` / `data[Body][body_fat]` を参照
+  - ログインフォームがフレームワーク移行した以上、体重記録ページの input 名も `Body[weight]` 等へ変わっている可能性が高い
+  - その場合、あすけん → Garmin の体重・体脂肪率同期が沈黙して壊れる（フィクスチャが旧名のためテストでは検知不可）
+  - 本環境からは実サイトへアクセスできず生 HTML を確認できないため投機的変更は行わなかった
+  - **次アクション**: 実際の体重記録ページの生 HTML を取得し input 名を確認、移行済みなら追随すること
+- 送信ボタンが `type="image"`（`Submit[submit].x/.y`）だが payload に submit パラメータ未含有。旧実装から挙動不変だが live 疎通確認時に要否を検証すること

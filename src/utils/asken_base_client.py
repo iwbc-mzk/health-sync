@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import time
 from typing import Any
+from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
@@ -97,9 +98,9 @@ class AskenBaseClient:
         self._session: requests.Session = self._login(email, password)
 
     def _login(self, email: str, password: str) -> requests.Session:
-        """ログインページから CSRF / _Token 系 hidden input を取得してフォームログインする.
+        """ログインページから CSRF hidden input を取得してフォームログインする.
 
-        CakePHP 2.x のフォーム保護には data[_Token][key], [fields], [unlocked] が必要。
+        CakePHP 3.x+ のフォーム保護には _csrfToken が必要。フォーム内の
         すべての hidden input を収集して payload に含める。
 
         Raises:
@@ -116,7 +117,8 @@ class AskenBaseClient:
         )
 
         soup = BeautifulSoup(get_resp.text, "lxml")
-        login_form = soup.find("form", {"id": "indexForm"})
+        login_container = soup.find("div", {"id": "login"})
+        login_form = login_container.find("form") if login_container else None
         if login_form is None:
             raise AskenAuthError("ログインフォームが見つかりません")
 
@@ -127,22 +129,26 @@ class AskenBaseClient:
             if isinstance(name, str) and name:
                 payload[name] = value
 
-        if "data[_Token][key]" not in payload:
+        if "_csrfToken" not in payload:
             raise AskenAuthError("ログインページの CSRF トークンが見つかりません")
-        if not payload["data[_Token][key]"]:
+        if not payload["_csrfToken"]:
             raise AskenAuthError("CSRF トークンが空です")
 
         payload.update(
             {
-                "data[CustomerMember][email]": email,
-                "data[CustomerMember][passwd_plain]": password,
-                "data[CustomerMember][autologin]": "1",
+                "CustomerMember[email]": email,
+                "CustomerMember[passwd_plain]": password,
+                "CustomerMember[autologin]": "1",
             }
         )
 
+        action = login_form.get("action")
+        action_path = action if isinstance(action, str) and action else "/login"
+        post_url = urljoin(_LOGIN_URL, action_path)
+
         post_resp = request_with_retry(
             session.post,
-            _LOGIN_URL,
+            post_url,
             headers=_HEADERS,
             data=payload,
             timeout=30,

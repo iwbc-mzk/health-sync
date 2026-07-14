@@ -126,6 +126,37 @@ class TestAskenClientLogin:
             client = AskenClient("test@example.com", "password")
             assert client._session is session
 
+    def test_login_posts_new_form_field_names(self, fixture_html):
+        """POST ペイロードが新フォーム構造のキー名で送信されることを検証する.
+
+        旧 CakePHP 2.x 形式（data[...] ラッパー / data[_Token][key]）へ
+        巻き戻した場合にこのテストが失敗する（リグレッション検知）。
+        """
+        login_page = fixture_html("login_page.html")
+        success_page = fixture_html("login_success.html")
+
+        with patch("utils.asken_base_client.requests.Session") as mock_session_cls:
+            session = self._make_session_mock(
+                login_page, success_page, "https://www.asken.jp/"
+            )
+            mock_session_cls.return_value = session
+            AskenClient("test@example.com", "password")
+
+            # POST 先はフォームの action="/login"（末尾スラッシュなし）から導出される
+            post_url = session.post.call_args[0][0]
+            assert post_url == "https://www.asken.jp/login"
+
+            payload = session.post.call_args.kwargs["data"]
+            assert payload["CustomerMember[email]"] == "test@example.com"
+            assert payload["CustomerMember[passwd_plain]"] == "password"
+            # hidden(=0) を checkbox(=1) 相当で上書きして自動ログイン有効化
+            assert payload["CustomerMember[autologin]"] == "1"
+            # CSRF トークンは _csrfToken（CakePHP 3.x+）で送信される
+            assert payload["_csrfToken"] == "test_csrf_token_abc123"
+            # 旧 CakePHP 2.x 形式のキーが残っていないこと
+            assert not any(k.startswith("data[") for k in payload)
+            assert "data[_Token][key]" not in payload
+
     def test_login_fails_when_redirected_to_login(self, fixture_html):
         login_page = fixture_html("login_page.html")
 
@@ -192,7 +223,7 @@ class TestAskenClientLogin:
                     AskenClient("test@example.com", "password")
 
     def test_login_fails_when_csrf_token_missing(self):
-        html_no_token = "<html><body><form id='indexForm'></form></body></html>"
+        html_no_token = "<html><body><div id='login'><form action='/login'></form></div></body></html>"
 
         with patch("utils.asken_base_client.requests.Session") as mock_session_cls:
             session = MagicMock()

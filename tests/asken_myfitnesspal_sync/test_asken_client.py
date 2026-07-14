@@ -19,6 +19,9 @@ from asken_myfitnesspal_sync.asken_client import (
 from asken_myfitnesspal_sync.models import MealType
 from utils.asken_base_client import _LOGIN_URL
 
+# ログインフォームの action="/login"（末尾スラッシュなし）へ POST される
+_LOGIN_POST_URL = "https://www.asken.jp/login"
+
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 SHARED_FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
@@ -47,7 +50,7 @@ def _add_login_mocks() -> None:
     )
     responses_lib.add(
         responses_lib.POST,
-        _LOGIN_URL,
+        _LOGIN_POST_URL,
         body=_load_shared("login_success.html"),
         status=200,
     )
@@ -61,6 +64,26 @@ class TestLogin:
         assert client._session is not None
 
     @responses_lib.activate
+    def test_login_posts_new_form_fields(self) -> None:
+        """実際に送信される POST ボディが新フォーム構造のキー名であることを検証する."""
+        from urllib.parse import parse_qs
+
+        _add_login_mocks()
+        AskenClient("user@example.com", "password")
+
+        # 最後のリクエスト（ログイン POST）のボディを検証
+        post_call = responses_lib.calls[-1]
+        assert post_call.request.method == "POST"
+        assert post_call.request.url == _LOGIN_POST_URL
+        body = parse_qs(post_call.request.body)
+        assert body["CustomerMember[email]"] == ["user@example.com"]
+        assert body["CustomerMember[passwd_plain]"] == ["password"]
+        assert body["CustomerMember[autologin]"] == ["1"]
+        assert body["_csrfToken"] == ["test_csrf_token_abc123"]
+        # 旧 CakePHP 2.x 形式のキーが混入していないこと
+        assert not any(k.startswith("data[") for k in body)
+
+    @responses_lib.activate
     def test_login_wrong_credentials(self) -> None:
         """ログイン失敗（ログアウトリンクなし）は AskenAuthError."""
         responses_lib.add(
@@ -71,7 +94,7 @@ class TestLogin:
         )
         responses_lib.add(
             responses_lib.POST,
-            _LOGIN_URL,
+            _LOGIN_POST_URL,
             body="<html><body>ログインに失敗しました</body></html>",
             status=200,
         )
@@ -95,9 +118,11 @@ class TestLogin:
         """CSRF トークンが空の場合は AskenAuthError."""
         html = (
             "<html><body>"
-            '<form id="indexForm">'
-            '<input type="hidden" name="data[_Token][key]" value=""/>'
+            '<div id="login">'
+            '<form action="/login">'
+            '<input type="hidden" name="_csrfToken" value=""/>'
             "</form>"
+            "</div>"
             "</body></html>"
         )
         responses_lib.add(

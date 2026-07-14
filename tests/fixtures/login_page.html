@@ -2,16 +2,20 @@
 <html>
 <head><title>あすけん | ログイン</title></head>
 <body>
-<form action="/login/" id="indexForm" method="post">
-  <div style="display:none;">
-    <input type="hidden" name="_method" value="POST"/>
-    <input type="hidden" name="data[_Token][key]" value="test_csrf_token_abc123"/>
-    <input type="hidden" name="data[_Token][fields]" value="test_fields_hash"/>
-    <input type="hidden" name="data[_Token][unlocked]" value=""/>
+<div id="login">
+  <h1>メールアドレスでログイン</h1>
+  <div class="gbox696_body">
+    <form method="post" accept-charset="utf-8" action="/login">
+      <div style="display:none;">
+        <input type="hidden" name="_csrfToken" value="test_csrf_token_abc123"/>
+      </div>
+      <input type="text" name="CustomerMember[email]" class="input_text"/>
+      <input type="password" name="CustomerMember[passwd_plain]" class="input_text"/>
+      <input type="hidden" name="CustomerMember[autologin]" value="0"/>
+      <input type="checkbox" name="CustomerMember[autologin]" value="1"/>
+      <input type="image" name="Submit[submit]" src="/img/member_mng/btn_login.gif" alt="ログイン"/>
+    </form>
   </div>
-  <input name="data[CustomerMember][email]" type="text"/>
-  <input name="data[CustomerMember][passwd_plain]" type="password"/>
-  <input type="checkbox" name="data[CustomerMember][autologin]" value="1"/>
-</form>
+</div>
 </body>
 </html>
