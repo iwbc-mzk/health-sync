@@ -297,7 +297,7 @@ class TestGetBodyComposition:
         client = self._make_client()
         html = """
         <html><body>
-        <input name="data[Body][weight]" value="invalid" type="text"/>
+        <input name="Body[weight]" value="invalid" type="text"/>
         </body></html>
         """
         client._session.get.return_value = self._make_resp(html)
@@ -310,8 +310,8 @@ class TestGetBodyComposition:
         client = self._make_client()
         html = """
         <html><body>
-        <input name="data[Body][weight]" value="65.0" type="text"/>
-        <input name="data[Body][body_fat]" value="N/A" type="text"/>
+        <input name="Body[weight]" value="65.0" type="text"/>
+        <input name="Body[body_fat]" value="N/A" type="text"/>
         </body></html>
         """
         client._session.get.return_value = self._make_resp(html)

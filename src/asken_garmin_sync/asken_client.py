@@ -61,8 +61,8 @@ class AskenClient(AskenBaseClient):
 
         soup = BeautifulSoup(resp.text, "lxml")
 
-        weight_input = soup.find("input", {"name": "data[Body][weight]"})
-        fat_input = soup.find("input", {"name": "data[Body][body_fat]"})
+        weight_input = soup.find("input", {"name": "Body[weight]"})
+        fat_input = soup.find("input", {"name": "Body[body_fat]"})
 
         if weight_input is None:
             logger.warning("体重入力フィールドが見つかりません: %s", target_date)

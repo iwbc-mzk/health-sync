@@ -271,11 +271,15 @@ TLS 指紋偽装等のグレー対策は採用せず、「実ブラウザに近�
 - pytest tests/: 334 passed / ruff: OK / mypy: Success
 - evaluator: PASS（旧形式へ巻き戻すと追加テストが FAILED になることを確認済み）
 
-### ⚠️ 未解決リスク（要ユーザー確認・別タスク）
-- **body-composition 解析が同様に壊れている可能性**
-  - src/asken_garmin_sync/asken_client.py:64-65 は依然 CakePHP 2.x 形式 `data[Body][weight]` / `data[Body][body_fat]` を参照
-  - ログインフォームがフレームワーク移行した以上、体重記録ページの input 名も `Body[weight]` 等へ変わっている可能性が高い
-  - その場合、あすけん → Garmin の体重・体脂肪率同期が沈黙して壊れる（フィクスチャが旧名のためテストでは検知不可）
-  - 本環境からは実サイトへアクセスできず生 HTML を確認できないため投機的変更は行わなかった
-  - **次アクション**: 実際の体重記録ページの生 HTML を取得し input 名を確認、移行済みなら追随すること
+### body-composition 解析の修正（同日、ユーザー提供 HTML により対応済み）
+- **前回の懸念が的中**: 体重記録ページも CakePHP 2.x → 3.x+ 形式へ移行していた
+  - `data[Body][weight]` → `Body[weight]`、`data[Body][body_fat]` → `Body[body_fat]`
+  - src/asken_garmin_sync/asken_client.py:64-65 を修正
+  - fixtures/comment_with_body.html / comment_no_body.html を実 HTML 構造に更新
+    （div#body_data_box > form#body_form 内、Body[hosu]/Body[record_date]/_csrfToken 含む）
+  - test_asken_client.py のインライン HTML 3 箇所も新フィールド名に更新
+  - evaluator PASS（旧名へ巻き戻すと TestGetBodyComposition 3件が FAILED になることを実証）
+
+### ⚠️ 残存観察（本番投入時に確認）
 - 送信ボタンが `type="image"`（`Submit[submit].x/.y`）だが payload に submit パラメータ未含有。旧実装から挙動不変だが live 疎通確認時に要否を検証すること
+- 他ページ（食事登録など MFP 側の POST）も同様にフレームワーク移行の影響を受けている可能性がある。運用開始後に各機能の疎通を確認すること

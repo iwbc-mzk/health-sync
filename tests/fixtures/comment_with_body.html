@@ -3,11 +3,21 @@
 <head><title>あすけん | 食事カルテ</title></head>
 <body>
 <div id="body_data_box">
+  <h4>カラダの記録</h4>
   <div class="yellow695_body">
-    <form action="" method="post" id="body_form">
-      <input name="data[Body][weight]" type="text" value="66.3" id="BodyWeight"/>
-      <input name="data[Body][body_fat]" type="text" value="20.8" id="BodyBodyFat"/>
-      <input name="data[Body][record_date]" type="hidden" value="2026-04-13" id="BodyRecordDate"/>
+    <form method="post" accept-charset="utf-8" id="body_form" onsubmit="return false;" action="/wsp/comment/2026-04-13">
+      <div style="display:none;"><input type="hidden" name="_csrfToken" value="test_csrf_token_abc123"/></div>
+      <div class="label">
+        <input type="text" name="Body[weight]" class="input_text" max_length="5" value="66.3"/>
+      </div>
+      <div class="label">
+        <input type="text" name="Body[body_fat]" class="input_text" max_length="4" value="20.8"/>
+      </div>
+      <div class="label">
+        <input type="text" name="Body[hosu]" class="input_text" max_length="7"/>
+        <input type="hidden" name="Body[hosuEdit]" value="0"/>
+        <input type="hidden" name="Body[record_date]" value="2026-04-13"/>
+      </div>
     </form>
   </div>
 </div>
